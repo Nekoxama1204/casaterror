@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js - octree collisions with monster</title>
+		<meta charset=utf-8 />
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			#gameOver {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				background-color: rgba(0, 0, 0, 0.8);
+				color: white;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				font-size: 5em;
+				flex-direction: column;
+				display: none;
+				z-index: 1000;
+			}
+
+			#scoreDisplay {
+				position: absolute;
+				bottom: 20px;
+				right: 20px;
+				color: white;
+				font-size: 2em;
+				background-color: rgba(0, 0, 0, 0.5);
+				padding: 10px 20px;
+				border-radius: 10px;
+			}
+			
+			#winScreen {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				background-color: rgba(0, 0, 0, 0.8);
+				color: white;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				font-size: 5em;
+				flex-direction: column;
+				display: none;
+				z-index: 1000;
+			}
+			
+			#playAgainButton {
+				margin-top: 20px;
+				padding: 10px 20px;
+				font-size: 0.5em;
+				cursor: pointer;
+			}
+			#restartButton {
+				margin-top: 20px;
+				padding: 10px 20px;
+				font-size: 0.5em;
+				cursor: pointer;
+			}
+
+			#startScreen {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+				background-color: rgba(0, 0, 0, 0.9);
+				color: white;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				z-index: 999;
+			}
+
+			#startButton {
+				margin-top: 20px;
+				padding: 10px 20px;
+				font-size: 1.5em;
+				cursor: pointer;
+			}
+
+		</style>
+	</head>
+	<body>
+		
+		<div id="container"></div>
+		<div id="gameOver">
+			¡PERDISTE!
+			<button id="restartButton">Reiniciar</button>
+		</div>
+		<div id="scoreDisplay">Puntos: 0/3</div>
+		<div id="winScreen">
+			¡Te salvaste!
+			<button id="playAgainButton">Jugar de nuevo</button>
+			
+		</div>
+
+		<div id="startScreen">
+			<h1>¡Bienvenido al juego!</h1>
+			<p>Encuentra 3 puntos antes de que el monstruo te atrape.</p>
+			<p>Controles: WASD para moverse, ratón para mirar, Shift para correr, Space para saltar.</p>
+			<button id="startButton">Iniciar</button>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+			// 1. Imports primero
+			import * as THREE from 'three';
+			import Stats from 'three/addons/libs/stats.module.js';
+			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+			import { Octree } from 'three/addons/math/Octree.js';
+			import { OctreeHelper } from 'three/addons/helpers/OctreeHelper.js';
+			import { Capsule } from 'three/addons/math/Capsule.js';
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+		
+			// 2. Constantes básicas y configuración inicial
+			const GRAVITY = 30;
+			const STEPS_PER_FRAME = 5;
+			const container = document.getElementById('container');
+			
+			// 3. Configuración de Three.js (escena, cámara, renderer)
+			const clock = new THREE.Clock();
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color(0x000000);
+			scene.fog = new THREE.Fog(0x000000, 0, 30);
+			
+			const cameraContainer = new THREE.Group();
+			scene.add(cameraContainer);
+			const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+			camera.rotation.order = 'YXZ';
+			camera.position.set(0, -0.1, 0);
+			cameraContainer.add(camera);
+			
+			const renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			renderer.setAnimationLoop(animate);
+			renderer.shadowMap.enabled = true;
+			renderer.shadowMap.type = THREE.VSMShadowMap;
+			renderer.toneMapping = THREE.ACESFilmicToneMapping;
+			renderer.autoClear = false;
+			renderer.setClearColor(0x000000, 1);
+			renderer.toneMappingExposure = 1.5;
+			container.appendChild(renderer.domElement);
+		
+			// 4. Audio (primero el listener, luego los sonidos)
+			const audioListener = new THREE.AudioListener();
+			camera.add(audioListener);
+			const audioLoader = new THREE.AudioLoader();
+			
+			const screamSound = new THREE.Audio(audioListener);
+			const pointSound = new THREE.Audio(audioListener);
+
+			const startMusic = new THREE.Audio(audioListener);
+			const gameMusic = new THREE.Audio(audioListener);
+			const loseMusic = new THREE.Audio(audioListener);
+			const winMusic = new THREE.Audio(audioListener);
+			const walkSound = new THREE.Audio(audioListener);
+			const monsterWalkSound = new THREE.Audio(audioListener);
+
+			// Cargar sonidos
+			audioLoader.load('grito.mp3', function(buffer) {
+				screamSound.setBuffer(buffer);
+				screamSound.setVolume(0.5);
+			});
+			
+			audioLoader.load('tomar.mp3', function(buffer) {
+				pointSound.setBuffer(buffer);
+				pointSound.setVolume(0.5);
+			});
+
+			audioLoader.load('mini.mp3', (buffer) => {
+				startMusic.setBuffer(buffer);
+				startMusic.setLoop(true);
+				startMusic.setVolume(0.4);
+				startMusic.play();
+			});
+
+			audioLoader.load('mjue.mp3', (buffer) => {
+				gameMusic.setBuffer(buffer);
+				gameMusic.setLoop(true);
+				gameMusic.setVolume(0.4);
+			});
+
+			audioLoader.load('mper.mp3', (buffer) => {
+				loseMusic.setBuffer(buffer);
+				loseMusic.setVolume(0.6);
+			});
+
+			audioLoader.load('mgan.mp3', (buffer) => {
+				winMusic.setBuffer(buffer);
+				winMusic.setVolume(0.6);
+			});
+
+			audioLoader.load('mjug.mp3', (buffer) => {
+				walkSound.setBuffer(buffer);
+				walkSound.setLoop(true);
+				walkSound.setVolume(0.3);
+			});
+
+			audioLoader.load('mmou.mp3', (buffer) => {
+				monsterWalkSound.setBuffer(buffer);
+				monsterWalkSound.setLoop(true);
+				monsterWalkSound.setVolume(0.3);
+			});
+		
+			// 5. Iluminación
+			const fillLight1 = new THREE.HemisphereLight(0x8dc1de, 0x00668d, 0.8);
+			fillLight1.position.set(2, 1, 1);
+			scene.add(fillLight1);
+			
+			const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+			directionalLight.position.set(-5, 25, -1);
+			directionalLight.castShadow = true;
+			directionalLight.shadow.camera.near = 0.01;
+			directionalLight.shadow.camera.far = 500;
+			directionalLight.shadow.camera.right = 30;
+			directionalLight.shadow.camera.left = -30;
+			directionalLight.shadow.camera.top = 30;
+			directionalLight.shadow.camera.bottom = -30;
+			directionalLight.shadow.mapSize.width = 1024;
+			directionalLight.shadow.mapSize.height = 1024;
+			directionalLight.shadow.radius = 4;
+			directionalLight.shadow.bias = -0.00006;
+			scene.add(directionalLight);
+		
+			// 6. Variables del jugador
+			const initialPlayerPos = new THREE.Vector3(-4.69, 1.35, -20.19);
+			const playerCollider = new Capsule(
+				initialPlayerPos.clone(),
+				new THREE.Vector3(initialPlayerPos.x, initialPlayerPos.y + 0.65, initialPlayerPos.z),
+				0.35
+			);
+			const playerVelocity = new THREE.Vector3();
+			const playerDirection = new THREE.Vector3();
+			const smoothCameraPosition = new THREE.Vector3();
+			const smoothCameraTarget = new THREE.Vector3();
+			const lerpFactor = 0.2;
+			
+			let playerOnFloor = false;
+			let mouseTime = 0;
+			const keyStates = {};
+			
+			// Movimiento del jugador
+			let isSprinting = false;
+			let sprintDuration = 5;
+			let sprintCooldown = 5;
+			let sprintTimeRemaining = 0;
+			let sprintCooldownRemaining = 0;
+			
+			// Head bob
+			let headBobActive = false;
+			let headBobTime = 0;
+			const headBobAmount = 0.05;
+			const headBobSpeedWalk = 10;
+			const headBobSpeedRun = 15;
+		
+			// 7. Variables del monstruo
+			const monsterInitialPos = new THREE.Vector3(-0.72, -23.00, 3.48);
+			const monsterCollider = new Capsule(
+				new THREE.Vector3(monsterInitialPos.x, monsterInitialPos.y, monsterInitialPos.z),
+				new THREE.Vector3(monsterInitialPos.x, monsterInitialPos.y + 0.65, monsterInitialPos.z),
+				0.35
+			);
+			const monsterPath = [];
+			const monsterSpeed = 1500;
+			const monsterDetectionRadius = 350;
+			const monsterAttackDistance = 1.5;
+			const pathUpdateInterval = 0.5;
+			const roarStopDuration = 5;
+			const roarCooldown = 40;
+			const roarDistance = 11;
+			
+			let currentPathIndex = 0;
+			let pathUpdateTimer = 0;
+			let monsterVelocity = new THREE.Vector3();
+			let monsterOnFloor = false;
+			let monsterSpawnTimer = 0;
+			let monsterSpawned = false;
+			let roarStopTime = 0;
+			let monsterRoarAction;
+			let isRoaring = false;
+			let lastRoarTime = 0;
+			let monster;
+			let monsterMixer;
+			let monsterRunAction;
+		
+			// 8. Sistema de puntos
+			const possiblePositions = [
+				{ x: -32.57, y: -30.00, z: 5.55 },
+				{ x: -8.19, y: -30.00, z: -0.96 },
+				{ x: -2.71, y: -30.00, z: -15.13 },
+				{ x: -12.07, y: -30.00, z: -15.64 },
+				{ x: -18.59, y: -30.00, z: -11.94 },
+				{ x: -30.56, y: -30.00, z: -9.13 },
+				{ x: 14.81, y: -30.00, z: 6.75 },
+				{ x: 5.43, y: -30.00, z: 4.80 },
+				{ x: 18.89, y: -30.00, z: -5.45 },
+				{ x: 4.31, y: -30.00, z: -13.62 },
+				{ x: -22.23, y: -30.00, z: 7.69 },
+				{ x: -20.90, y: -30.00, z: 10.72 },
+				{ x: -8.86, y: -30.00, z: 18.24 }
+			];
+			
+			let points = 0;
+			let pointObjects = [];
+			let gameOver = false;
+		
+			// 9. Utilidades
+			const stats = new Stats();
+			stats.domElement.style.position = 'absolute';
+			stats.domElement.style.top = '0px';
+			container.appendChild(stats.domElement);
+			
+			const vector1 = new THREE.Vector3();
+			const vector2 = new THREE.Vector3();
+			const vector3 = new THREE.Vector3();
+			const worldOctree = new Octree();
+
+			// Configurar el monstruo
+			function setupMonster() {
+				const fbxLoader = new FBXLoader();
+				
+				fbxLoader.load('models/fbx/mons.fbx', (fbx) => {
+					monster = fbx;
+					monster.scale.set(0.01, 0.01, 0.01);
+					
+					// Posición inicial basada en el collider
+					monster.position.copy(monsterInitialPos);
+					monster.position.y -= 0.8; // Ajuste para que los pies estén en el suelo
+					
+					monster.traverse(child => {
+						if (child.isMesh) {
+							child.castShadow = true;
+							child.receiveShadow = true;
+						}
+					});
+					
+					scene.add(monster);
+					
+					fbxLoader.load('models/fbx/run.fbx', (animFbx) => {
+						monsterMixer = new THREE.AnimationMixer(monster);
+						monsterRunAction = monsterMixer.clipAction(animFbx.animations[0]);
+						monsterRunAction.play();
+					});
+
+					fbxLoader.load('models/fbx/rugido.fbx', (roarAnim) => {
+						monsterRoarAction = monsterMixer.clipAction(roarAnim.animations[0]);
+						monsterRoarAction.setLoop(THREE.LoopOnce);
+						monsterRunAction.play();
+					});
+				});
+			}
+
+			
+
+			function monsterCollisions() {
+				const result = worldOctree.capsuleIntersect(monsterCollider);
+				monsterOnFloor = false;
+
+				if (result) {
+					monsterOnFloor = result.normal.y > 0;
+					if (!monsterOnFloor) {
+						monsterVelocity.addScaledVector(result.normal, -result.normal.dot(monsterVelocity));
+					}
+					if (result.depth >= 1e-10) {
+						monsterCollider.translate(result.normal.multiplyScalar(result.depth));
+					}
+					monsterCollider.translate(new THREE.Vector3(0, -result.depth * 0.5, 0));
+				}
+			}
+
+			// Nueva función para actualizar el camino
+			function updateMonsterPath() {
+				monsterPath.length = 0;
+				const playerPos = cameraContainer.position.clone();
+				const monsterPos = monsterCollider.end.clone();
+				
+				// Punto intermedio para evitar obstáculos (ajusta según tu mapa)
+				const intermediatePoint = monsterPos.clone().lerp(playerPos, 0.5);
+				intermediatePoint.y = monsterPos.y; // Mantener misma altura
+				
+				// Añadir puntos de ruta
+				monsterPath.push(intermediatePoint);
+				monsterPath.push(playerPos);
+				currentPathIndex = 0;
+			}
+
+			// Actualizar posición del monstruo
+			function updateMonster(deltaTime) {
+				if (!monster || gameOver) return;
+
+				// Declaración al inicio
+				const distanceToPlayer = monsterCollider.end.distanceTo(cameraContainer.position);
+				const currentTime = clock.getElapsedTime();
+				const isInRoarStopPeriod = currentTime < roarStopTime;
+				
+				
+
+				if (!monsterSpawned) {
+					monsterSpawnTimer += deltaTime;
+					if (monsterSpawnTimer >= 3) {
+						monsterCollider.start.copy(monsterInitialPos);
+						monsterCollider.end.set(monsterInitialPos.x, monsterInitialPos.y + 0.65, monsterInitialPos.z);
+						monster.position.copy(monsterCollider.end);
+						monster.position.y -= 0.8;
+						monsterSpawned = true;
+						updateMonsterPath();
+					} else {
+						return;
+					}
+				}
+
+				// Actualizar ruta periódicamente
+				pathUpdateTimer += deltaTime;
+				if (pathUpdateTimer >= pathUpdateInterval) {
+					updateMonsterPath();
+					pathUpdateTimer = 0;
+				}
+
+				// Aplicar gravedad
+				let damping = Math.exp(-4 * deltaTime) - 1;
+				if (!monsterOnFloor) {
+					monsterVelocity.y -= GRAVITY * deltaTime;
+					damping *= 0.2;
+				}
+				monsterVelocity.addScaledVector(monsterVelocity, damping);
+
+				// Movimiento solo si está en el suelo
+				if (monsterOnFloor && monsterPath.length > 0 && !isInRoarStopPeriod) {
+					const targetPoint = monsterPath[currentPathIndex];
+					const direction = new THREE.Vector3().subVectors(targetPoint, monsterCollider.end);
+					direction.y = 0;
+
+					if (!monsterWalkSound.isPlaying) monsterWalkSound.play();
+					
+					if (direction.length() < 1.5) {
+						currentPathIndex = Math.min(currentPathIndex + 1, monsterPath.length - 1);
+					}
+					
+					if (direction.length() > 0.1) {
+						direction.normalize();
+						const speedMultiplier = Math.min(1, direction.length() / 5);
+						monsterVelocity.add(direction.multiplyScalar(monsterSpeed * speedMultiplier * deltaTime));
+						
+						const targetQuat = new THREE.Quaternion().setFromUnitVectors(
+							new THREE.Vector3(0, 0, 1),
+							direction.clone().normalize()
+						);
+						monster.quaternion.slerp(targetQuat, deltaTime * 5);
+					}
+				}
+
+				if (!isRoaring && !monsterRunAction.isRunning() && !isInRoarStopPeriod) {
+					monsterRunAction.play();
+				}
+
+
+				// Manejo del rugido
+				if (!isRoaring && distanceToPlayer <= roarDistance && 
+					(currentTime - lastRoarTime) > roarCooldown &&
+					!isInRoarStopPeriod) {
+					startRoar();
+				}
+
+				if (isRoaring) {
+					// Durante el rugido, no hacer nada (ya se maneja en startRoar)
+				} else if (!isInRoarStopPeriod) {
+					// Si no está rugiendo ni en periodo de espera, reanudar correr si no está activo
+					if (!monsterRunAction.isRunning()) {
+						monsterRunAction.play();
+					}
+				}
+				
+				// Detección de ataque
+				if (distanceToPlayer < monsterAttackDistance && !gameOver) {
+					gameOver = true;
+					gameMusic.stop();
+					loseMusic.play();
+					screamSound.play();
+					document.getElementById('gameOver').style.display = 'flex';
+				}
+
+				// Actualizar posición física
+				const deltaPosition = monsterVelocity.clone().multiplyScalar(deltaTime);
+				monsterCollider.translate(deltaPosition);
+				monsterCollisions();
+
+				// Sincronizar modelo 3D
+				monster.position.copy(monsterCollider.end);
+				monster.position.y -= 0.8;
+
+				// Actualizar animación
+				if (monsterMixer) monsterMixer.update(deltaTime);
+
+				if (!monsterOnFloor || isInRoarStopPeriod || gameOver) {
+					if (monsterWalkSound.isPlaying) monsterWalkSound.stop();
+				}
+			}
+
+			if (monsterSpawnTimer >= 10 && !monsterSpawned) {
+				// Efecto de sonido
+				const spawnSound = new THREE.Audio(audioListener);
+				audioLoader.load('spawnsound.mp3', function(buffer) {
+					spawnSound.setBuffer(buffer);
+					spawnSound.play();
+				});
+				
+				// Efecto visual (partículas o luz)
+				const spawnLight = new THREE.PointLight(0xff0000, 5, 5);
+				spawnLight.position.copy(monsterInitialPos); // Cambiado para que la luz aparezca donde el monstruo
+				scene.add(spawnLight);
+				
+				setTimeout(() => {
+					scene.remove(spawnLight);
+				}, 1000);
+				
+				// Posicionar al monstruo CORRECTAMENTE
+				monsterCollider.start.copy(monsterInitialPos);
+				monsterCollider.end.set(monsterInitialPos.x, monsterInitialPos.y + 0.65, monsterInitialPos.z);
+				monster.position.copy(monsterInitialPos);
+				monster.position.y -= 0.8; // Ajuste visual para la altura del modelo
+				
+				monsterSpawned = true;
+			}
+
+			// Reiniciar el juego
+			function restartGame() {
+				gameOver = false;
+				document.getElementById('gameOver').style.display = 'none';
+				document.getElementById('winScreen').style.display = 'none';
+				
+				//sonidos
+				startMusic.stop();
+				gameMusic.play();
+				winMusic.stop();
+				loseMusic.stop();
+
+				// Resetear jugador
+				playerCollider.start.copy(initialPlayerPos);
+				playerCollider.end.copy(new THREE.Vector3(initialPlayerPos.x, initialPlayerPos.y + 0.65, initialPlayerPos.z));
+				playerVelocity.set(0, 0, 0);
+				
+				// Resetear monstruo
+				monsterSpawned = false;
+				monsterSpawnTimer = 0;
+				monsterVelocity.set(0, 0, 0);
+				
+				// Resetear puntos
+				points = 0;
+				document.getElementById('scoreDisplay').textContent = 'Puntos: 0/3';
+				
+				// Eliminar puntos antiguos
+				pointObjects.forEach(point => {
+				scene.remove(point.model);
+				});
+				pointObjects = [];
+				
+				// Crear nuevos puntos
+			}
+
+			document.getElementById('restartButton').addEventListener('click', restartGame);
+			document.getElementById('playAgainButton').addEventListener('click', restartGame);
+			document.getElementById('startButton').addEventListener('click', () => {
+				document.getElementById('startScreen').style.display = 'none';
+				startMusic.stop();
+				gameMusic.play();
+			});
+
+			document.addEventListener('keydown', (event) => {
+				keyStates[event.code] = true;
+			});
+
+			document.addEventListener('keyup', (event) => {
+				keyStates[event.code] = false;
+			});
+
+			container.addEventListener('mousedown', () => {
+				if (!gameOver) {
+					document.body.requestPointerLock();
+				}
+			});
+
+			document.body.addEventListener('mousemove', (event) => {
+				if (document.pointerLockElement === document.body && !gameOver) {
+					camera.rotation.y -= event.movementX / 500;
+					camera.rotation.x -= event.movementY / 500;
+				}
+			});
+
+			document.getElementById('restartButton').addEventListener('click', restartGame);
+
+			window.addEventListener('resize', onWindowResize);
+
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+			}
+
+			function playerCollisions() {
+				const result = worldOctree.capsuleIntersect(playerCollider);
+				playerOnFloor = false;
+
+				if (result) {
+					playerOnFloor = result.normal.y > 0;
+
+					if (!playerOnFloor) {
+						playerVelocity.addScaledVector(result.normal, -result.normal.dot(playerVelocity));
+					}
+
+					if (result.depth >= 1e-10) {
+						playerCollider.translate(result.normal.multiplyScalar(result.depth));
+					}
+				}
+			}
+
+			function startRoar() {
+				isRoaring = true;
+				monsterRunAction.stop();
+				monsterRoarAction.reset().play();
+				lastRoarTime = clock.getElapsedTime();
+				roarStopTime = lastRoarTime + roarStopDuration;
+				
+				monsterRoarAction.clampWhenFinished = true;
+				monsterRoarAction.setLoop(THREE.LoopOnce);
+				
+				// Cambia este listener para manejar mejor la transición
+				monsterMixer.addEventListener('finished', (e) => {
+					if (e.action === monsterRoarAction) {
+						isRoaring = false;
+						// No reanudamos la carrera aquí, se hará en updateMonster
+					}
+				});
+
+				// Efecto de sonido
+				const roarSound = new THREE.Audio(audioListener);
+				audioLoader.load('rugido.mp3', function(buffer) {
+					roarSound.setBuffer(buffer);
+					roarSound.setVolume(0.7);
+					roarSound.play();
+				});
+				
+				// Efecto visual
+				const roarLight = new THREE.PointLight(0xff0000, 5, 10);
+				roarLight.position.copy(monster.position);
+				scene.add(roarLight);
+				
+				setTimeout(() => scene.remove(roarLight), 1000);
+			}
+
+			function updatePlayer(deltaTime) {
+				if (gameOver) return;
+				
+				let damping = Math.exp(-4 * deltaTime) - 1;
+
+				if (!playerOnFloor) {
+					playerVelocity.y -= GRAVITY * deltaTime;
+					damping *= 0.2;
+					headBobActive = false;
+				}
+
+				playerVelocity.addScaledVector(playerVelocity, damping);
+				const deltaPosition = playerVelocity.clone().multiplyScalar(deltaTime);
+				playerCollider.translate(deltaPosition);
+				playerCollisions();
+				
+				smoothCameraTarget.copy(playerCollider.end);
+				smoothCameraPosition.lerp(smoothCameraTarget, lerpFactor);
+				cameraContainer.position.copy(smoothCameraPosition);
+				
+				const speed = playerVelocity.length();
+				if (playerOnFloor && speed > 1) {
+					headBobActive = true;
+					const headBobSpeed = isSprinting ? headBobSpeedRun : headBobSpeedWalk;
+					headBobTime += deltaTime * headBobSpeed;
+					
+					if (!walkSound.isPlaying) walkSound.play();
+					
+					const headBobY = Math.sin(headBobTime) * headBobAmount * (isSprinting ? 1.5 : 1);
+					camera.position.y = -0.1 + headBobY;
+					
+					const headBobX = Math.sin(headBobTime * 0.5) * headBobAmount * 0.3;
+					camera.rotation.z = headBobX;
+					
+					const headBobZ = Math.sin(headBobTime * 0.8) * headBobAmount * 0.2;
+					camera.position.z = headBobZ;
+				} else {
+					if (headBobActive) {
+						camera.position.y = THREE.MathUtils.lerp(camera.position.y, -0.1, deltaTime * 5);
+						camera.position.z = THREE.MathUtils.lerp(camera.position.z, 0, deltaTime * 5);
+						camera.rotation.z = THREE.MathUtils.lerp(camera.rotation.z, 0, deltaTime * 5);
+						
+						if (Math.abs(camera.rotation.z) < 0.001) {
+							headBobActive = false;
+							headBobTime = 0;
+							camera.rotation.z = 0;
+							camera.position.set(0, -0.1, 0);
+						}
+					}
+				}
+				if (!headBobActive && playerOnFloor && playerVelocity.length() < 0.5) {
+					const breathTime = performance.now() * 0.001;
+					camera.position.y = -0.1 + Math.sin(breathTime * 0.5) * 0.01;
+				}
+
+				if (!playerOnFloor || playerVelocity.length() < 0.2) {
+					if (walkSound.isPlaying) walkSound.stop();
+				}
+			}
+
+			function getForwardVector() {
+				camera.getWorldDirection(playerDirection);
+				playerDirection.y = 0;
+				playerDirection.normalize();
+				return playerDirection;
+			}
+
+			function getSideVector() {
+				camera.getWorldDirection(playerDirection);
+				playerDirection.y = 0;
+				playerDirection.normalize();
+				playerDirection.cross(camera.up);
+				return playerDirection;
+			}
+
+			function createPoints() {
+				// Mezclar las posiciones y tomar las primeras 4
+				const shuffledPositions = [...possiblePositions].sort(() => 0.5 - Math.random()).slice(0, 4);
+				
+				const pointLoader = new GLTFLoader();
+				pointLoader.load('models/gltf/punto.glb', (gltf) => {
+					gltf.scene.scale.set(0.4, 0.4, 0.4); // Escala pequeña
+					
+					shuffledPositions.forEach(pos => {
+						const pointClone = gltf.scene.clone();
+						pointClone.position.set(pos.x, pos.y, pos.z);
+						
+						// Crear collider para el punto
+						const pointCollider = new THREE.Sphere(new THREE.Vector3(pos.x, pos.y, pos.z), 0.5);
+						
+						scene.add(pointClone);
+						pointObjects.push({
+							model: pointClone,
+							collider: pointCollider,
+							collected: false
+						});
+					});
+				});
+			}
+
+			function checkPointCollisions() {
+				const playerSphere = new THREE.Sphere(playerCollider.end, playerCollider.radius);
+
+				pointObjects.forEach((point, index) => {
+					if (!point.collected && playerSphere.intersectsSphere(point.collider)) {
+					point.collected = true;
+					// scene.remove(point.model); // <- probar comentado si hay problema
+					point.model.visible = false; // <- solución alternativa segura
+					points++;
+
+					document.getElementById('scoreDisplay').textContent = `Puntos: ${points}/3`;
+
+					if (pointSound.isPlaying) pointSound.stop();
+					if (pointSound.buffer) pointSound.play();
+
+					if (points >= 3) {
+						winGame();
+					}
+				}
+			});
+			}
+
+
+			function winGame() {
+				if (gameOver) return;
+				gameOver = true;
+				gameMusic.stop();
+				winMusic.play();
+				document.getElementById('winScreen').style.display = 'flex';
+			}
+
+
+
+			function controls(deltaTime) {
+				if (gameOver) return;
+				
+				const speedDelta = deltaTime * (playerOnFloor ? 25 : 8);
+				
+				if (isSprinting) {
+					sprintTimeRemaining -= deltaTime;
+					if (sprintTimeRemaining <= 0) {
+						isSprinting = false;
+						sprintCooldownRemaining = sprintCooldown;
+					}
+				} else if (sprintCooldownRemaining > 0) {
+					sprintCooldownRemaining -= deltaTime;
+				}
+				
+				if (keyStates['ShiftLeft'] && playerOnFloor && !isSprinting && sprintCooldownRemaining <= 0) {
+					isSprinting = true;
+					sprintTimeRemaining = sprintDuration;
+				}
+				
+				const currentSpeed = isSprinting ? speedDelta * 1.8 : speedDelta;
+				
+				if (keyStates['KeyW']) {
+					playerVelocity.add(getForwardVector().multiplyScalar(currentSpeed));
+				}
+
+				if (keyStates['KeyS']) {
+					playerVelocity.add(getForwardVector().multiplyScalar(-currentSpeed));
+				}
+
+				if (keyStates['KeyA']) {
+					playerVelocity.add(getSideVector().multiplyScalar(-currentSpeed));
+				}
+
+				if (keyStates['KeyD']) {
+					playerVelocity.add(getSideVector().multiplyScalar(currentSpeed));
+				}
+
+				if (playerOnFloor && keyStates['Space']) {
+					playerVelocity.y = 8;
+				}
+			}
+
+			const loader = new GLTFLoader().setPath('./models/gltf/');
+
+			loader.load('maybe.glb', (gltf) => {
+				gltf.scene.position.y = 0;
+				scene.add(gltf.scene);
+		
+				worldOctree.fromGraphNode(gltf.scene);
+				createPoints()
+
+				gltf.scene.traverse(child => {
+					if (child.isMesh && child.material) {
+						child.castShadow = true;
+						child.receiveShadow = true;
+						if (child.material.color) {
+							child.material.color.multiplyScalar(0.87);
+						}
+						if (child.material.emissive) {
+							child.material.emissive.set(0x000000);
+						}
+						if (child.material.map) {
+							child.material.map.anisotropy = 4;
+						}
+					}
+    
+				
+					
+				});
+
+				// Octree Debug Helper
+				const helper = new OctreeHelper(worldOctree);
+				helper.visible = false;
+				scene.add(helper);
+
+				// Configurar el monstruo después de cargar el mapa
+				setupMonster();
+			});
+
+			function teleportPlayerIfOob() {
+				if (cameraContainer.position.y <= -60) {
+					playerCollider.start.set(0, 0.35, 0);
+					playerCollider.end.set(0, 1, 0);
+					playerCollider.radius = 0.35;
+					smoothCameraTarget.set(0, 1, 0);
+					smoothCameraPosition.set(0, 1, 0);
+					cameraContainer.position.set(0, 1, 0);
+					cameraContainer.rotation.set(0, 0, 0);
+					camera.rotation.set(0, 0, 0);
+					playerVelocity.set(0, 0, 0);
+				}
+			}
+
+			let frameCount = 0;
+
+			function animate() {
+				const deltaTime = Math.min(0.05, clock.getDelta()) / STEPS_PER_FRAME;
+
+				if (monsterMixer) monsterMixer.update(deltaTime);
+				const targetFov = isSprinting ? 120 : 70;
+				camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, deltaTime * 8);
+				camera.updateProjectionMatrix();
+				
+				for (let i = 0; i < STEPS_PER_FRAME; i++) {
+					controls(deltaTime);
+					updatePlayer(deltaTime);
+					teleportPlayerIfOob();
+				}
+				
+				// Actualizar el monstruo
+				updateMonster(deltaTime);
+
+				checkPointCollisions();
+				
+				// Imprimir coordenadas cada 60 frames (aproximadamente 1 vez por segundo)
+				frameCount++;
+				if (frameCount % 60 === 0) {
+					// Coordenadas del jugador
+					console.log('Jugador - Posición:', {
+						x: cameraContainer.position.x.toFixed(2),
+						y: cameraContainer.position.y.toFixed(2),
+						z: cameraContainer.position.z.toFixed(2)
+					});
+					
+					// Coordenadas del monstruo (si existe)
+					if (monster) {
+						console.log('Monstruo - Posición:', {
+							x: monster.position.x.toFixed(2),
+							y: monster.position.y.toFixed(2),
+							z: monster.position.z.toFixed(2)
+						});
+						
+						// También puedes imprimir la distancia entre jugador y monstruo
+						const distance = monster.position.distanceTo(cameraContainer.position);
+						console.log(`Distancia entre jugador y monstruo: ${distance.toFixed(2)} unidades`);
+					}
+				}
+				
+				renderer.render(scene, camera);
+				stats.update();
+			}
+							
+		</script>
+	</body>
+</html>
