@@ -3,7 +3,7 @@
 	<head>
 		<title>three.js - octree collisions with monster</title>
 		<meta charset=utf-8 />
-		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<link type="text/css" rel="stylesheet" href="main.css">
 		<style>
 			#gameOver {
@@ -86,6 +86,20 @@
 				cursor: pointer;
 			}
 
+			#vrButton {
+				position: absolute;
+				bottom: 20px;
+				left: 20px;
+				padding: 12px 24px;
+				background-color: #1E88E5;
+				color: white;
+				border: none;
+				border-radius: 4px;
+				font-size: 16px;
+				cursor: pointer;
+				z-index: 1001;
+			}
+
 		</style>
 	</head>
 	<body>
@@ -108,15 +122,18 @@
 			<p>Controles: WASD para moverse, ratón para mirar, Shift para correr, Space para saltar.</p>
 			<button id="startButton">Iniciar</button>
 		</div>
+		
+		<button id="vrButton">Entrar en VR</button>
 
 		<script type="importmap">
 			{
 				"imports": {
-					"three": "https://unpkg.com/three@0.158.0/build/three.module.js",
-					"three/addons/": "./jsm/"
+					"three": "https://unpkg.com/three@0.162.0/build/three.module.js",
+					"three/addons/": "https://unpkg.com/three@0.162.0/examples/jsm/"
 				}
 			}
 		</script>
+
 
 		<script type="module">
 			// 1. Imports primero
@@ -128,6 +145,9 @@
 			import { OctreeHelper } from 'three/addons/helpers/OctreeHelper.js';
 			import { Capsule } from 'three/addons/math/Capsule.js';
 			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+			import { VRButton } from 'three/addons/webxr/VRButton.js';
+			import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+			import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
 		
 			// 2. Constantes básicas y configuración inicial
 			const GRAVITY = 30;
@@ -139,6 +159,8 @@
 			const scene = new THREE.Scene();
 			scene.background = new THREE.Color(0x000000);
 			scene.fog = new THREE.Fog(0x000000, 0, 30);
+
+
 			
 			const cameraContainer = new THREE.Group();
 			scene.add(cameraContainer);
@@ -154,6 +176,7 @@
 			renderer.shadowMap.enabled = true;
 			renderer.shadowMap.type = THREE.VSMShadowMap;
 			renderer.toneMapping = THREE.ACESFilmicToneMapping;
+			renderer.xr.enabled = true; // Habilitar WebXR
 			renderer.autoClear = false;
 			renderer.setClearColor(0x000000, 1);
 			renderer.toneMappingExposure = 1.5;
@@ -253,6 +276,12 @@
 			const smoothCameraTarget = new THREE.Vector3();
 			const lerpFactor = 0.2;
 			
+			let controllers = [];
+			let controllerGrips = [];
+			let movementController = null;
+			const controllerModelFactory = new XRControllerModelFactory();
+			const handModelFactory = new XRHandModelFactory();
+
 			let playerOnFloor = false;
 			let mouseTime = 0;
 			const keyStates = {};
@@ -332,6 +361,23 @@
 			const vector2 = new THREE.Vector3();
 			const vector3 = new THREE.Vector3();
 			const worldOctree = new Octree();
+
+			function setupVRControllers() {
+				controllers = [
+					renderer.xr.getController(0),
+					renderer.xr.getController(1)
+				];
+				
+				controllerGrips = [
+					renderer.xr.getControllerGrip(0),
+					renderer.xr.getControllerGrip(1)
+				];
+				
+				// Añadir modelos a los controles
+				controllerGrips.forEach((grip, i) => {
+					grip.add(controllerModelFactory.createControllerModel(grip));
+					scene.add(grip);
+			});
 
 			// Configurar el monstruo
 			function setupMonster() {
@@ -843,6 +889,7 @@
 
 			const loader = new GLTFLoader().setPath('./models/gltf/');
 
+
 			loader.load('maybe.glb', (gltf) => {
 				gltf.scene.position.y = 0;
 				scene.add(gltf.scene);
@@ -878,6 +925,18 @@
 				setupMonster();
 			});
 
+			controllers.forEach(controller => {
+					scene.add(controller);
+					
+					controller.addEventListener('selectstart', onSelectStart);
+					controller.addEventListener('selectend', onSelectEnd);
+					controller.addEventListener('squeezestart', onSqueezeStart);
+					controller.addEventListener('squeezeend', onSqueezeEnd);
+			});
+
+			movementController = controllers[0];
+
+
 			function teleportPlayerIfOob() {
 				if (cameraContainer.position.y <= -60) {
 					playerCollider.start.set(0, 0.35, 0);
@@ -893,20 +952,6 @@
 			}
 
 			let frameCount = 0;
-
-			function animate() {
-				const deltaTime = Math.min(0.05, clock.getDelta()) / STEPS_PER_FRAME;
-
-				if (monsterMixer) monsterMixer.update(deltaTime);
-				const targetFov = isSprinting ? 120 : 70;
-				camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, deltaTime * 8);
-				camera.updateProjectionMatrix();
-				
-				for (let i = 0; i < STEPS_PER_FRAME; i++) {
-					controls(deltaTime);
-					updatePlayer(deltaTime);
-					teleportPlayerIfOob();
-				}
 				
 				// Actualizar el monstruo
 				updateMonster(deltaTime);
@@ -940,7 +985,151 @@
 				renderer.render(scene, camera);
 				stats.update();
 			}
-							
+
+					// Event handlers para los controles
+			function onSelectStart(event) {
+				// Saltar cuando se presiona el gatillo
+				if (playerOnFloor) {
+					playerVelocity.y = 8;
+				}
+			}
+			
+			function onSelectEnd(event) {
+				// Puedes añadir lógica al soltar el gatillo
+			}
+			
+			function onSqueezeStart(event) {
+				// Correr cuando se presiona el botón grip
+				isSprinting = true;
+			}
+			
+			function onSqueezeEnd(event) {
+				// Dejar de correr al soltar
+				isSprinting = false;
+			}
+			
+			// NUEVO PARA VR: Movimiento basado en joystick
+			function getMovementFromController() {
+				if (!movementController || !renderer.xr.isPresenting) return new THREE.Vector3();
+				
+				const session = renderer.xr.getSession();
+				if (!session) return new THREE.Vector3();
+				
+				const inputSource = session.inputSources[0]; // Controlador izquierdo
+				if (!inputSource || !inputSource.gamepad) return new THREE.Vector3();
+				
+				const gamepad = inputSource.gamepad;
+				const xAxis = gamepad.axes[2] || 0;
+				const yAxis = gamepad.axes[3] || 0;
+				
+				// Crear vector de movimiento basado en el joystick
+				const movement = new THREE.Vector3(xAxis, 0, -yAxis);
+				movement.normalize();
+				
+				// Aplicar la rotación de la cámara (cabeza del usuario)
+				movement.applyQuaternion(camera.quaternion);
+				movement.y = 0; // No queremos movimiento vertical
+				
+				return movement;
+			}
+
+			// 4. Modificar la función controls() para usar VR
+			function controls(deltaTime) {
+				if (gameOver) return;
+				
+				const speedDelta = deltaTime * (playerOnFloor ? 25 : 8);
+				const currentSpeed = isSprinting ? speedDelta * 1.8 : speedDelta;
+				
+				// NUEVO PARA VR: Movimiento con joystick en lugar de teclado
+				if (renderer.xr.isPresenting) {
+					const movement = getMovementFromController().multiplyScalar(currentSpeed);
+					playerVelocity.add(movement);
+				} 
+				// Mantener controles de teclado para desarrollo
+				else {
+					if (keyStates['KeyW']) {
+						playerVelocity.add(getForwardVector().multiplyScalar(currentSpeed));
+					}
+					if (keyStates['KeyS']) {
+						playerVelocity.add(getForwardVector().multiplyScalar(-currentSpeed));
+					}
+					if (keyStates['KeyA']) {
+						playerVelocity.add(getSideVector().multiplyScalar(-currentSpeed));
+					}
+					if (keyStates['KeyD']) {
+						playerVelocity.add(getSideVector().multiplyScalar(currentSpeed));
+					}
+					if (playerOnFloor && keyStates['Space']) {
+						playerVelocity.y = 8;
+					}
+					if (keyStates['ShiftLeft']) {
+						isSprinting = true;
+					} else {
+						isSprinting = false;
+					}
+				}
+			}
+
+			// 5. Modificar la función animate() para VR
+			function animate() {
+				const deltaTime = Math.min(0.05, clock.getDelta()) / STEPS_PER_FRAME;
+				
+				// NUEVO PARA VR: No necesitamos ajustar FOV en VR
+				if (!renderer.xr.isPresenting) {
+					const targetFov = isSprinting ? 120 : 70;
+					camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, deltaTime * 8);
+					camera.updateProjectionMatrix();
+				}
+				
+				for (let i = 0; i < STEPS_PER_FRAME; i++) {
+					controls(deltaTime);
+					updatePlayer(deltaTime);
+					teleportPlayerIfOob();
+				}
+				
+				updateMonster(deltaTime);
+				checkPointCollisions();
+				
+				renderer.render(scene, camera);
+				stats.update();
+			}
+			
+			// 6. Configuración inicial de VR
+			document.getElementById('vrButton').addEventListener('click', function() {
+				if (!renderer.xr.isPresenting) {
+					renderer.xr.setSession(renderer.xr.getSession());
+				}
+			});
+			
+			// Crear botón VR
+			document.body.appendChild(VRButton.createButton(renderer));
+			
+			// Inicializar controles VR
+			setupVRControllers();
+			
+			// Iniciar el bucle de animación
+			renderer.setAnimationLoop(animate);
+			
+			// El resto de tu código permanece igual...
+			// (Mantener todas las funciones de colisiones, monstruo, puntos, etc.)
+			
+			// Asegurarse de que el audio funcione en VR
+			renderer.xr.addEventListener('sessionstart', () => {
+				audioListener.context.resume();
+				gameMusic.play();
+			});
+			
+			renderer.xr.addEventListener('sessionend', () => {
+				gameMusic.pause();
+			});
+
+			// Configurar el evento de resize
+			window.addEventListener('resize', onWindowResize);
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+			}
 		</script>
 	</body>
 </html>
