@@ -4,7 +4,6 @@
 		<title>three.js - octree collisions with monster</title>
 		<meta charset=utf-8 />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-		<link type="text/css" rel="stylesheet" href="main.css">
 		<style>
 			#gameOver {
 				position: absolute;
@@ -122,14 +121,12 @@
 			<p>Controles: WASD para moverse, ratón para mirar, Shift para correr, Space para saltar.</p>
 			<button id="startButton">Iniciar</button>
 		</div>
-		
-		<button id="vrButton">Entrar en VR</button>
 
 		<script type="importmap">
 			{
 				"imports": {
-					"three": "https://unpkg.com/three@0.162.0/build/three.module.js",
-					"three/addons/": "https://unpkg.com/three@0.162.0/examples/jsm/"
+					"three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+					"three/addons/": "./jsm/"
 				}
 			}
 		</script>
@@ -361,6 +358,44 @@
 			const vector2 = new THREE.Vector3();
 			const vector3 = new THREE.Vector3();
 			const worldOctree = new Octree();
+
+			const loader = new GLTFLoader().setPath('./models/gltf/');
+
+
+			loader.load('maybe.glb', (gltf) => {
+				gltf.scene.position.y = 0;
+				scene.add(gltf.scene);
+		
+				worldOctree.fromGraphNode(gltf.scene);
+				createPoints()
+
+				gltf.scene.traverse(child => {
+					if (child.isMesh && child.material) {
+						child.castShadow = true;
+						child.receiveShadow = true;
+						if (child.material.color) {
+							child.material.color.multiplyScalar(0.87);
+						}
+						if (child.material.emissive) {
+							child.material.emissive.set(0x000000);
+						}
+						if (child.material.map) {
+							child.material.map.anisotropy = 4;
+						}
+					}
+    
+				
+					
+				});
+
+				// Octree Debug Helper
+				const helper = new OctreeHelper(worldOctree);
+				helper.visible = false;
+				scene.add(helper);
+
+				// Configurar el monstruo después de cargar el mapa
+				setupMonster();
+			});
 
 			function setupVRControllers() {
 				controllers = [
@@ -654,6 +689,7 @@
 
 			window.addEventListener('resize', onWindowResize);
 
+
 			function onWindowResize() {
 				camera.aspect = window.innerWidth / window.innerHeight;
 				camera.updateProjectionMatrix();
@@ -887,44 +923,6 @@
 				}
 			}
 
-			const loader = new GLTFLoader().setPath('./models/gltf/');
-
-
-			loader.load('maybe.glb', (gltf) => {
-				gltf.scene.position.y = 0;
-				scene.add(gltf.scene);
-		
-				worldOctree.fromGraphNode(gltf.scene);
-				createPoints()
-
-				gltf.scene.traverse(child => {
-					if (child.isMesh && child.material) {
-						child.castShadow = true;
-						child.receiveShadow = true;
-						if (child.material.color) {
-							child.material.color.multiplyScalar(0.87);
-						}
-						if (child.material.emissive) {
-							child.material.emissive.set(0x000000);
-						}
-						if (child.material.map) {
-							child.material.map.anisotropy = 4;
-						}
-					}
-    
-				
-					
-				});
-
-				// Octree Debug Helper
-				const helper = new OctreeHelper(worldOctree);
-				helper.visible = false;
-				scene.add(helper);
-
-				// Configurar el monstruo después de cargar el mapa
-				setupMonster();
-			});
-
 			controllers.forEach(controller => {
 					scene.add(controller);
 					
@@ -1095,11 +1093,6 @@
 			}
 			
 			// 6. Configuración inicial de VR
-			document.getElementById('vrButton').addEventListener('click', function() {
-				if (!renderer.xr.isPresenting) {
-					renderer.xr.setSession(renderer.xr.getSession());
-				}
-			});
 			
 			// Crear botón VR
 			document.body.appendChild(VRButton.createButton(renderer));
