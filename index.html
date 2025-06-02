@@ -386,6 +386,41 @@
 				});
 			}
 
+						function setupMonster() {
+				const fbxLoader = new FBXLoader();
+				
+				fbxLoader.load('models/fbx/mons.fbx', (fbx) => {
+					monster = fbx;
+					monster.scale.set(0.01, 0.01, 0.01);
+					
+					// Posición inicial basada en el collider
+					monster.position.copy(monsterInitialPos);
+					monster.position.y -= 0.8; // Ajuste para que los pies estén en el suelo
+					
+					monster.traverse(child => {
+						if (child.isMesh) {
+							child.castShadow = true;
+							child.receiveShadow = true;
+						}
+					});
+					
+					scene.add(monster);
+					
+					fbxLoader.load('models/fbx/run.fbx', (animFbx) => {
+						monsterMixer = new THREE.AnimationMixer(monster);
+						monsterRunAction = monsterMixer.clipAction(animFbx.animations[0]);
+						monsterRunAction.play();
+					});
+
+					fbxLoader.load('models/fbx/rugido.fbx', (roarAnim) => {
+						monsterRoarAction = monsterMixer.clipAction(roarAnim.animations[0]);
+						monsterRoarAction.setLoop(THREE.LoopOnce);
+						monsterRunAction.play();
+					});
+				});
+			}
+
+
 
 			loader.load('maybe.glb', (gltf) => {
 				gltf.scene.position.y = 30;
@@ -440,41 +475,6 @@
 			});
 
 			// Configurar el monstruo
-			function setupMonster() {
-				const fbxLoader = new FBXLoader();
-				
-				fbxLoader.load('models/fbx/mons.fbx', (fbx) => {
-					monster = fbx;
-					monster.scale.set(0.01, 0.01, 0.01);
-					
-					// Posición inicial basada en el collider
-					monster.position.copy(monsterInitialPos);
-					monster.position.y -= 0.8; // Ajuste para que los pies estén en el suelo
-					
-					monster.traverse(child => {
-						if (child.isMesh) {
-							child.castShadow = true;
-							child.receiveShadow = true;
-						}
-					});
-					
-					scene.add(monster);
-					
-					fbxLoader.load('models/fbx/run.fbx', (animFbx) => {
-						monsterMixer = new THREE.AnimationMixer(monster);
-						monsterRunAction = monsterMixer.clipAction(animFbx.animations[0]);
-						monsterRunAction.play();
-					});
-
-					fbxLoader.load('models/fbx/rugido.fbx', (roarAnim) => {
-						monsterRoarAction = monsterMixer.clipAction(roarAnim.animations[0]);
-						monsterRoarAction.setLoop(THREE.LoopOnce);
-						monsterRunAction.play();
-					});
-				});
-			}
-
-			
 
 			function monsterCollisions() {
 				const result = worldOctree.capsuleIntersect(monsterCollider);
@@ -772,65 +772,6 @@
 				setTimeout(() => scene.remove(roarLight), 1000);
 			}
 
-			function updatePlayer(deltaTime) {
-				if (gameOver) return;
-				
-				let damping = Math.exp(-4 * deltaTime) - 1;
-
-				if (!playerOnFloor) {
-					playerVelocity.y -= GRAVITY * deltaTime;
-					damping *= 0.2;
-					headBobActive = false;
-				}
-
-				playerVelocity.addScaledVector(playerVelocity, damping);
-				const deltaPosition = playerVelocity.clone().multiplyScalar(deltaTime);
-				playerCollider.translate(deltaPosition);
-				playerCollisions();
-				
-				smoothCameraTarget.copy(playerCollider.end);
-				smoothCameraPosition.lerp(smoothCameraTarget, lerpFactor);
-				cameraContainer.position.copy(smoothCameraPosition);
-				
-				const speed = playerVelocity.length();
-				if (playerOnFloor && speed > 1) {
-					headBobActive = true;
-					const headBobSpeed = isSprinting ? headBobSpeedRun : headBobSpeedWalk;
-					headBobTime += deltaTime * headBobSpeed;
-					
-					if (!walkSound.isPlaying) walkSound.play();
-					
-					const headBobY = Math.sin(headBobTime) * headBobAmount * (isSprinting ? 1.5 : 1);
-					camera.position.y = -0.1 + headBobY;
-					
-					const headBobX = Math.sin(headBobTime * 0.5) * headBobAmount * 0.3;
-					camera.rotation.z = headBobX;
-					
-					const headBobZ = Math.sin(headBobTime * 0.8) * headBobAmount * 0.2;
-					camera.position.z = headBobZ;
-				} else {
-					if (headBobActive) {
-						camera.position.y = THREE.MathUtils.lerp(camera.position.y, -0.1, deltaTime * 5);
-						camera.position.z = THREE.MathUtils.lerp(camera.position.z, 0, deltaTime * 5);
-						camera.rotation.z = THREE.MathUtils.lerp(camera.rotation.z, 0, deltaTime * 5);
-						
-						if (Math.abs(camera.rotation.z) < 0.001) {
-							headBobActive = false;
-							headBobTime = 0;
-							camera.rotation.z = 0;
-							camera.position.set(0, -0.1, 0);
-						}
-					}
-				}
-				if (!headBobActive && playerOnFloor && playerVelocity.length() < 0.5) {
-					const breathTime = performance.now() * 0.001;
-					camera.position.y = -0.1 + Math.sin(breathTime * 0.5) * 0.01;
-				}
-
-				if (!playerOnFloor || playerVelocity.length() < 0.2) {
-					if (walkSound.isPlaying) walkSound.stop();
-				}
-			}
 
 			function getForwardVector() {
 				camera.getWorldDirection(playerDirection);
@@ -1102,6 +1043,66 @@
 				camera.aspect = window.innerWidth / window.innerHeight;
 				camera.updateProjectionMatrix();
 				renderer.setSize(window.innerWidth, window.innerHeight);
+			}
+
+						function updatePlayer(deltaTime) {
+				if (gameOver) return;
+				
+				let damping = Math.exp(-4 * deltaTime) - 1;
+
+				if (!playerOnFloor) {
+					playerVelocity.y -= GRAVITY * deltaTime;
+					damping *= 0.2;
+					headBobActive = false;
+				}
+
+				playerVelocity.addScaledVector(playerVelocity, damping);
+				const deltaPosition = playerVelocity.clone().multiplyScalar(deltaTime);
+				playerCollider.translate(deltaPosition);
+				playerCollisions();
+				
+				smoothCameraTarget.copy(playerCollider.end);
+				smoothCameraPosition.lerp(smoothCameraTarget, lerpFactor);
+				cameraContainer.position.copy(smoothCameraPosition);
+				
+				const speed = playerVelocity.length();
+				if (playerOnFloor && speed > 1) {
+					headBobActive = true;
+					const headBobSpeed = isSprinting ? headBobSpeedRun : headBobSpeedWalk;
+					headBobTime += deltaTime * headBobSpeed;
+					
+					if (!walkSound.isPlaying) walkSound.play();
+					
+					const headBobY = Math.sin(headBobTime) * headBobAmount * (isSprinting ? 1.5 : 1);
+					camera.position.y = -0.1 + headBobY;
+					
+					const headBobX = Math.sin(headBobTime * 0.5) * headBobAmount * 0.3;
+					camera.rotation.z = headBobX;
+					
+					const headBobZ = Math.sin(headBobTime * 0.8) * headBobAmount * 0.2;
+					camera.position.z = headBobZ;
+				} else {
+					if (headBobActive) {
+						camera.position.y = THREE.MathUtils.lerp(camera.position.y, -0.1, deltaTime * 5);
+						camera.position.z = THREE.MathUtils.lerp(camera.position.z, 0, deltaTime * 5);
+						camera.rotation.z = THREE.MathUtils.lerp(camera.rotation.z, 0, deltaTime * 5);
+						
+						if (Math.abs(camera.rotation.z) < 0.001) {
+							headBobActive = false;
+							headBobTime = 0;
+							camera.rotation.z = 0;
+							camera.position.set(0, -0.1, 0);
+						}
+					}
+				}
+				if (!headBobActive && playerOnFloor && playerVelocity.length() < 0.5) {
+					const breathTime = performance.now() * 0.001;
+					camera.position.y = -0.1 + Math.sin(breathTime * 0.5) * 0.01;
+				}
+
+				if (!playerOnFloor || playerVelocity.length() < 0.2) {
+					if (walkSound.isPlaying) walkSound.stop();
+				}
 			}
 
 			function animate() {
