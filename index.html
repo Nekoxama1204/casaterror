@@ -848,11 +848,6 @@
 				currentPathIndex = 0;
 			}
 				
-			function onWindowResize() {
-				camera.aspect = window.innerWidth / window.innerHeight;
-				camera.updateProjectionMatrix();
-				renderer.setSize(window.innerWidth, window.innerHeight);
-			}
 
 			function controls(deltaTime) {
 				if (gameOver) return;
@@ -1009,46 +1004,6 @@
 
 		}
 
-			// 4. Modificar la función controls() para usar VR
-			function controls(deltaTime) {
-				if (gameOver) return;
-				
-				const speedDelta = deltaTime * (playerOnFloor ? 25 : 8);
-				const currentSpeed = isSprinting ? speedDelta * 1.8 : speedDelta;
-				
-				// NUEVO PARA VR: Movimiento con joystick en lugar de teclado
-				if (renderer.xr.isPresenting) {
-					const movement = getMovementFromController().multiplyScalar(currentSpeed);
-					playerVelocity.add(movement);
-				} 
-				// Mantener controles de teclado para desarrollo
-				else {
-					if (keyStates['KeyW']) {
-						playerVelocity.add(getForwardVector().multiplyScalar(currentSpeed));
-					}
-					if (keyStates['KeyS']) {
-						playerVelocity.add(getForwardVector().multiplyScalar(-currentSpeed));
-					}
-					if (keyStates['KeyA']) {
-						playerVelocity.add(getSideVector().multiplyScalar(-currentSpeed));
-					}
-					if (keyStates['KeyD']) {
-						playerVelocity.add(getSideVector().multiplyScalar(currentSpeed));
-					}
-					if (playerOnFloor && keyStates['Space']) {
-						playerVelocity.y = 8;
-					}
-					if (keyStates['ShiftLeft']) {
-						isSprinting = true;
-					} else {
-						isSprinting = false;
-					}
-				}
-			}
-
-			// 5. Modificar la función animate() para VR
-			
-			// 6. Configuración inicial de VR
 			
 			// Crear botón VR
 			document.body.appendChild(VRButton.createButton(renderer));
