@@ -861,21 +861,6 @@
 
 			movementController = controllers[0];
 
-
-			function teleportPlayerIfOob() {
-				if (cameraContainer.position.y <= -60) {
-					playerCollider.start.set(0, 0.35, 0);
-					playerCollider.end.set(0, 1, 0);
-					playerCollider.radius = 0.35;
-					smoothCameraTarget.set(0, 1, 0);
-					smoothCameraPosition.set(0, 1, 0);
-					cameraContainer.position.set(0, 1, 0);
-					cameraContainer.rotation.set(0, 0, 0);
-					camera.rotation.set(0, 0, 0);
-					playerVelocity.set(0, 0, 0);
-				}
-			}
-
 			let frameCount = 0;
 				
 				// Actualizar el monstruo
@@ -1103,6 +1088,20 @@
 
 				if (!playerOnFloor || playerVelocity.length() < 0.2) {
 					if (walkSound.isPlaying) walkSound.stop();
+				}
+			}
+
+			function teleportPlayerIfOob() {
+				if (cameraContainer.position.y <= -60) {
+					playerCollider.start.set(0, 0.35, 0);
+					playerCollider.end.set(0, 1, 0);
+					playerCollider.radius = 0.35;
+					smoothCameraTarget.set(0, 1, 0);
+					smoothCameraPosition.set(0, 1, 0);
+					cameraContainer.position.set(0, 1, 0);
+					cameraContainer.rotation.set(0, 0, 0);
+					camera.rotation.set(0, 0, 0);
+					playerVelocity.set(0, 0, 0);
 				}
 			}
 
