@@ -361,6 +361,31 @@
 
 			const loader = new GLTFLoader().setPath('./models/gltf/');
 
+			function createPoints() {
+				// Mezclar las posiciones y tomar las primeras 4
+				const shuffledPositions = [...possiblePositions].sort(() => 0.5 - Math.random()).slice(0, 4);
+				
+				const pointLoader = new GLTFLoader();
+				pointLoader.load('models/gltf/punto.glb', (gltf) => {
+					gltf.scene.scale.set(0.4, 0.4, 0.4); // Escala pequeña
+					
+					shuffledPositions.forEach(pos => {
+						const pointClone = gltf.scene.clone();
+						pointClone.position.set(pos.x, pos.y, pos.z);
+						
+						// Crear collider para el punto
+						const pointCollider = new THREE.Sphere(new THREE.Vector3(pos.x, pos.y, pos.z), 0.5);
+						
+						scene.add(pointClone);
+						pointObjects.push({
+							model: pointClone,
+							collider: pointCollider,
+							collected: false
+						});
+					});
+				});
+			}
+
 
 			loader.load('maybe.glb', (gltf) => {
 				gltf.scene.position.y = 30;
@@ -822,30 +847,7 @@
 				return playerDirection;
 			}
 
-			function createPoints() {
-				// Mezclar las posiciones y tomar las primeras 4
-				const shuffledPositions = [...possiblePositions].sort(() => 0.5 - Math.random()).slice(0, 4);
-				
-				const pointLoader = new GLTFLoader();
-				pointLoader.load('models/gltf/punto.glb', (gltf) => {
-					gltf.scene.scale.set(0.4, 0.4, 0.4); // Escala pequeña
-					
-					shuffledPositions.forEach(pos => {
-						const pointClone = gltf.scene.clone();
-						pointClone.position.set(pos.x, pos.y, pos.z);
-						
-						// Crear collider para el punto
-						const pointCollider = new THREE.Sphere(new THREE.Vector3(pos.x, pos.y, pos.z), 0.5);
-						
-						scene.add(pointClone);
-						pointObjects.push({
-							model: pointClone,
-							collider: pointCollider,
-							collected: false
-						});
-					});
-				});
-			}
+			
 
 			function checkPointCollisions() {
 				const playerSphere = new THREE.Sphere(playerCollider.end, playerCollider.radius);
@@ -952,9 +954,9 @@
 			let frameCount = 0;
 				
 				// Actualizar el monstruo
-				updateMonster(deltaTime);
+				// updateMonster(deltaTime);
 
-				checkPointCollisions();
+				// checkPointCollisions();
 				
 				// Imprimir coordenadas cada 60 frames (aproximadamente 1 vez por segundo)
 				frameCount++;
@@ -1069,6 +1071,39 @@
 			}
 
 			// 5. Modificar la función animate() para VR
+			
+			// 6. Configuración inicial de VR
+			
+			// Crear botón VR
+			document.body.appendChild(VRButton.createButton(renderer));
+			
+			// Inicializar controles VR
+			setupVRControllers();
+			
+			// Iniciar el bucle de animación
+			
+			
+		
+			// (Mantener todas las funciones de colisiones, monstruo, puntos, etc.)
+			
+			// Asegurarse de que el audio funcione en VR
+			renderer.xr.addEventListener('sessionstart', () => {
+				audioListener.context.resume();
+				gameMusic.play();
+			});
+			
+			renderer.xr.addEventListener('sessionend', () => {
+				gameMusic.pause();
+			});
+
+			// Configurar el evento de resize
+			window.addEventListener('resize', onWindowResize);
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+			}
+
 			function animate() {
 				const deltaTime = Math.min(0.05, clock.getDelta()) / STEPS_PER_FRAME;
 				
@@ -1091,38 +1126,9 @@
 				renderer.render(scene, camera);
 				stats.update();
 			}
-			
-			// 6. Configuración inicial de VR
-			
-			// Crear botón VR
-			document.body.appendChild(VRButton.createButton(renderer));
-			
-			// Inicializar controles VR
-			setupVRControllers();
-			
-			// Iniciar el bucle de animación
+
 			renderer.setAnimationLoop(animate);
 			
-			// El resto de tu código permanece igual...
-			// (Mantener todas las funciones de colisiones, monstruo, puntos, etc.)
-			
-			// Asegurarse de que el audio funcione en VR
-			renderer.xr.addEventListener('sessionstart', () => {
-				audioListener.context.resume();
-				gameMusic.play();
-			});
-			
-			renderer.xr.addEventListener('sessionend', () => {
-				gameMusic.pause();
-			});
-
-			// Configurar el evento de resize
-			window.addEventListener('resize', onWindowResize);
-			function onWindowResize() {
-				camera.aspect = window.innerWidth / window.innerHeight;
-				camera.updateProjectionMatrix();
-				renderer.setSize(window.innerWidth, window.innerHeight);
-			}
 		</script>
 	</body>
 </html>
