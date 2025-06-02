@@ -361,229 +361,34 @@
 
 			const loader = new GLTFLoader().setPath('./models/gltf/');
 
-			function createPoints() {
-				// Mezclar las posiciones y tomar las primeras 4
-				const shuffledPositions = [...possiblePositions].sort(() => 0.5 - Math.random()).slice(0, 4);
-				
-				const pointLoader = new GLTFLoader();
-				pointLoader.load('models/gltf/punto.glb', (gltf) => {
-					gltf.scene.scale.set(0.4, 0.4, 0.4); // Escala pequeña
-					
-					shuffledPositions.forEach(pos => {
-						const pointClone = gltf.scene.clone();
-						pointClone.position.set(pos.x, pos.y, pos.z);
-						
-						// Crear collider para el punto
-						const pointCollider = new THREE.Sphere(new THREE.Vector3(pos.x, pos.y, pos.z), 0.5);
-						
-						scene.add(pointClone);
-						pointObjects.push({
-							model: pointClone,
-							collider: pointCollider,
-							collected: false
-						});
-					});
-				});
+			function getForwardVector() {
+				camera.getWorldDirection(playerDirection);
+				playerDirection.y = 0;
+				playerDirection.normalize();
+				return playerDirection;
 			}
 
-			function setupMonster() {
-				const fbxLoader = new FBXLoader();
-				
-				fbxLoader.load('models/fbx/mons.fbx', (fbx) => {
-					monster = fbx;
-					monster.scale.set(0.01, 0.01, 0.01);
-					
-					// Posición inicial basada en el collider
-					monster.position.copy(monsterInitialPos);
-					monster.position.y -= 0.8; // Ajuste para que los pies estén en el suelo
-					
-					monster.traverse(child => {
-						if (child.isMesh) {
-							child.castShadow = true;
-							child.receiveShadow = true;
-						}
-					});
-					
-					scene.add(monster);
-					
-					fbxLoader.load('models/fbx/run.fbx', (animFbx) => {
-						monsterMixer = new THREE.AnimationMixer(monster);
-						monsterRunAction = monsterMixer.clipAction(animFbx.animations[0]);
-						monsterRunAction.play();
-					});
-
-					fbxLoader.load('models/fbx/rugido.fbx', (roarAnim) => {
-						monsterRoarAction = monsterMixer.clipAction(roarAnim.animations[0]);
-						monsterRoarAction.setLoop(THREE.LoopOnce);
-						monsterRunAction.play();
-					});
-				});
+			function getSideVector() {
+				camera.getWorldDirection(playerDirection);
+				playerDirection.y = 0;
+				playerDirection.normalize();
+				playerDirection.cross(camera.up);
+				return playerDirection;
 			}
 
-
-
-			loader.load('maybe.glb', (gltf) => {
-				gltf.scene.position.y = 30;
-				scene.add(gltf.scene);
-		
-				worldOctree.fromGraphNode(gltf.scene);
-				createPoints()
-
-				gltf.scene.traverse(child => {
-					if (child.isMesh && child.material) {
-						child.castShadow = true;
-						child.receiveShadow = true;
-						if (child.material.color) {
-							child.material.color.multiplyScalar(0.87);
-						}
-						if (child.material.emissive) {
-							child.material.emissive.set(0x000000);
-						}
-						if (child.material.map) {
-							child.material.map.anisotropy = 4;
-						}
-					}
-    
-				
-					
-				});
-
-				// Octree Debug Helper
-				const helper = new OctreeHelper(worldOctree);
-				helper.visible = false;
-				scene.add(helper);
-
-				// Configurar el monstruo después de cargar el mapa
-				setupMonster();
-			});
-
-			function setupVRControllers() {
-				controllers = [
-					renderer.xr.getController(0),
-					renderer.xr.getController(1)
-				];
-				
-				controllerGrips = [
-					renderer.xr.getControllerGrip(0),
-					renderer.xr.getControllerGrip(1)
-				];
-				
-				// Añadir modelos a los controles
-				controllerGrips.forEach((grip, i) => {
-					grip.add(controllerModelFactory.createControllerModel(grip));
-					scene.add(grip);
-			});
-
-			// Configurar el monstruo
-
-			function monsterCollisions() {
-				const result = worldOctree.capsuleIntersect(monsterCollider);
-				monsterOnFloor = false;
-
-				if (result) {
-					monsterOnFloor = result.normal.y > 0;
-					if (!monsterOnFloor) {
-						monsterVelocity.addScaledVector(result.normal, -result.normal.dot(monsterVelocity));
-					}
-					if (result.depth >= 1e-10) {
-						monsterCollider.translate(result.normal.multiplyScalar(result.depth));
-					}
-					monsterCollider.translate(new THREE.Vector3(0, -result.depth * 0.5, 0));
+			function teleportPlayerIfOob() {
+				if (cameraContainer.position.y <= -60) {
+					playerCollider.start.set(0, 0.35, 0);
+					playerCollider.end.set(0, 1, 0);
+					playerCollider.radius = 0.35;
+					smoothCameraTarget.set(0, 1, 0);
+					smoothCameraPosition.set(0, 1, 0);
+					cameraContainer.position.set(0, 1, 0);
+					cameraContainer.rotation.set(0, 0, 0);
+					camera.rotation.set(0, 0, 0);
+					playerVelocity.set(0, 0, 0);
 				}
 			}
-
-			// Nueva función para actualizar el camino
-			function updateMonsterPath() {
-				monsterPath.length = 0;
-				const playerPos = cameraContainer.position.clone();
-				const monsterPos = monsterCollider.end.clone();
-				
-				// Punto intermedio para evitar obstáculos (ajusta según tu mapa)
-				const intermediatePoint = monsterPos.clone().lerp(playerPos, 0.5);
-				intermediatePoint.y = monsterPos.y; // Mantener misma altura
-				
-				// Añadir puntos de ruta
-				monsterPath.push(intermediatePoint);
-				monsterPath.push(playerPos);
-				currentPathIndex = 0;
-			}
-
-			// Actualizar posición del monstruo
-			// Reiniciar el juego
-			function restartGame() {
-				gameOver = false;
-				document.getElementById('gameOver').style.display = 'none';
-				document.getElementById('winScreen').style.display = 'none';
-				
-				//sonidos
-				startMusic.stop();
-				gameMusic.play();
-				winMusic.stop();
-				loseMusic.stop();
-
-				// Resetear jugador
-				playerCollider.start.copy(initialPlayerPos);
-				playerCollider.end.copy(new THREE.Vector3(initialPlayerPos.x, initialPlayerPos.y + 0.65, initialPlayerPos.z));
-				playerVelocity.set(0, 0, 0);
-				
-				// Resetear monstruo
-				monsterSpawned = false;
-				monsterSpawnTimer = 0;
-				monsterVelocity.set(0, 0, 0);
-				
-				// Resetear puntos
-				points = 0;
-				document.getElementById('scoreDisplay').textContent = 'Puntos: 0/3';
-				
-				// Eliminar puntos antiguos
-				pointObjects.forEach(point => {
-				scene.remove(point.model);
-				});
-				pointObjects = [];
-				
-				// Crear nuevos puntos
-			}
-
-			document.getElementById('restartButton').addEventListener('click', restartGame);
-			document.getElementById('playAgainButton').addEventListener('click', restartGame);
-			document.getElementById('startButton').addEventListener('click', () => {
-				document.getElementById('startScreen').style.display = 'none';
-				startMusic.stop();
-				gameMusic.play();
-			});
-
-			document.addEventListener('keydown', (event) => {
-				keyStates[event.code] = true;
-			});
-
-			document.addEventListener('keyup', (event) => {
-				keyStates[event.code] = false;
-			});
-
-			container.addEventListener('mousedown', () => {
-				if (!gameOver) {
-					document.body.requestPointerLock();
-				}
-			});
-
-			document.body.addEventListener('mousemove', (event) => {
-				if (document.pointerLockElement === document.body && !gameOver) {
-					camera.rotation.y -= event.movementX / 500;
-					camera.rotation.x -= event.movementY / 500;
-				}
-			});
-
-			document.getElementById('restartButton').addEventListener('click', restartGame);
-
-			window.addEventListener('resize', onWindowResize);
-
-
-			function onWindowResize() {
-				camera.aspect = window.innerWidth / window.innerHeight;
-				camera.updateProjectionMatrix();
-				renderer.setSize(window.innerWidth, window.innerHeight);
-			}
-
 
 			function startRoar() {
 				isRoaring = true;
@@ -619,356 +424,7 @@
 				setTimeout(() => scene.remove(roarLight), 1000);
 			}
 
-
-			function getForwardVector() {
-				camera.getWorldDirection(playerDirection);
-				playerDirection.y = 0;
-				playerDirection.normalize();
-				return playerDirection;
-			}
-
-			function getSideVector() {
-				camera.getWorldDirection(playerDirection);
-				playerDirection.y = 0;
-				playerDirection.normalize();
-				playerDirection.cross(camera.up);
-				return playerDirection;
-			}
-
-			
-
-			function checkPointCollisions() {
-				const playerSphere = new THREE.Sphere(playerCollider.end, playerCollider.radius);
-
-				pointObjects.forEach((point, index) => {
-					if (!point.collected && playerSphere.intersectsSphere(point.collider)) {
-					point.collected = true;
-					// scene.remove(point.model); // <- probar comentado si hay problema
-					point.model.visible = false; // <- solución alternativa segura
-					points++;
-
-					document.getElementById('scoreDisplay').textContent = `Puntos: ${points}/3`;
-
-					if (pointSound.isPlaying) pointSound.stop();
-					if (pointSound.buffer) pointSound.play();
-
-					if (points >= 3) {
-						winGame();
-					}
-				}
-			});
-			}
-
-
-			function winGame() {
-				if (gameOver) return;
-				gameOver = true;
-				gameMusic.stop();
-				winMusic.play();
-				document.getElementById('winScreen').style.display = 'flex';
-			}
-
-
-
-			function controls(deltaTime) {
-				if (gameOver) return;
-				
-				const speedDelta = deltaTime * (playerOnFloor ? 25 : 8);
-				
-				if (isSprinting) {
-					sprintTimeRemaining -= deltaTime;
-					if (sprintTimeRemaining <= 0) {
-						isSprinting = false;
-						sprintCooldownRemaining = sprintCooldown;
-					}
-				} else if (sprintCooldownRemaining > 0) {
-					sprintCooldownRemaining -= deltaTime;
-				}
-				
-				if (keyStates['ShiftLeft'] && playerOnFloor && !isSprinting && sprintCooldownRemaining <= 0) {
-					isSprinting = true;
-					sprintTimeRemaining = sprintDuration;
-				}
-				
-				const currentSpeed = isSprinting ? speedDelta * 1.8 : speedDelta;
-				
-				if (keyStates['KeyW']) {
-					playerVelocity.add(getForwardVector().multiplyScalar(currentSpeed));
-				}
-
-				if (keyStates['KeyS']) {
-					playerVelocity.add(getForwardVector().multiplyScalar(-currentSpeed));
-				}
-
-				if (keyStates['KeyA']) {
-					playerVelocity.add(getSideVector().multiplyScalar(-currentSpeed));
-				}
-
-				if (keyStates['KeyD']) {
-					playerVelocity.add(getSideVector().multiplyScalar(currentSpeed));
-				}
-
-				if (playerOnFloor && keyStates['Space']) {
-					playerVelocity.y = 8;
-				}
-			}
-
-			controllers.forEach(controller => {
-					scene.add(controller);
-					
-					controller.addEventListener('selectstart', onSelectStart);
-					controller.addEventListener('selectend', onSelectEnd);
-					controller.addEventListener('squeezestart', onSqueezeStart);
-					controller.addEventListener('squeezeend', onSqueezeEnd);
-			});
-
-			movementController = controllers[0];
-
-			let frameCount = 0;
-				
-				// Actualizar el monstruo
-				// updateMonster(deltaTime);
-
-				// checkPointCollisions();
-				
-				// Imprimir coordenadas cada 60 frames (aproximadamente 1 vez por segundo)
-				frameCount++;
-				if (frameCount % 60 === 0) {
-					// Coordenadas del jugador
-					console.log('Jugador - Posición:', {
-						x: cameraContainer.position.x.toFixed(2),
-						y: cameraContainer.position.y.toFixed(2),
-						z: cameraContainer.position.z.toFixed(2)
-					});
-					
-					// Coordenadas del monstruo (si existe)
-					if (monster) {
-						console.log('Monstruo - Posición:', {
-							x: monster.position.x.toFixed(2),
-							y: monster.position.y.toFixed(2),
-							z: monster.position.z.toFixed(2)
-						});
-						
-						// También puedes imprimir la distancia entre jugador y monstruo
-						const distance = monster.position.distanceTo(cameraContainer.position);
-						console.log(`Distancia entre jugador y monstruo: ${distance.toFixed(2)} unidades`);
-					}
-				}
-				
-				renderer.render(scene, camera);
-				stats.update();
-			}
-
-					// Event handlers para los controles
-			function onSelectStart(event) {
-				// Saltar cuando se presiona el gatillo
-				if (playerOnFloor) {
-					playerVelocity.y = 8;
-				}
-			}
-			
-			function onSelectEnd(event) {
-				// Puedes añadir lógica al soltar el gatillo
-			}
-			
-			function onSqueezeStart(event) {
-				// Correr cuando se presiona el botón grip
-				isSprinting = true;
-			}
-			
-			function onSqueezeEnd(event) {
-				// Dejar de correr al soltar
-				isSprinting = false;
-			}
-			
-			// NUEVO PARA VR: Movimiento basado en joystick
-			function getMovementFromController() {
-				if (!movementController || !renderer.xr.isPresenting) return new THREE.Vector3();
-				
-				const session = renderer.xr.getSession();
-				if (!session) return new THREE.Vector3();
-				
-				const inputSource = session.inputSources[0]; // Controlador izquierdo
-				if (!inputSource || !inputSource.gamepad) return new THREE.Vector3();
-				
-				const gamepad = inputSource.gamepad;
-				const xAxis = gamepad.axes[2] || 0;
-				const yAxis = gamepad.axes[3] || 0;
-				
-				// Crear vector de movimiento basado en el joystick
-				const movement = new THREE.Vector3(xAxis, 0, -yAxis);
-				movement.normalize();
-				
-				// Aplicar la rotación de la cámara (cabeza del usuario)
-				movement.applyQuaternion(camera.quaternion);
-				movement.y = 0; // No queremos movimiento vertical
-				
-				return movement;
-			}
-
-			// 4. Modificar la función controls() para usar VR
-			function controls(deltaTime) {
-				if (gameOver) return;
-				
-				const speedDelta = deltaTime * (playerOnFloor ? 25 : 8);
-				const currentSpeed = isSprinting ? speedDelta * 1.8 : speedDelta;
-				
-				// NUEVO PARA VR: Movimiento con joystick en lugar de teclado
-				if (renderer.xr.isPresenting) {
-					const movement = getMovementFromController().multiplyScalar(currentSpeed);
-					playerVelocity.add(movement);
-				} 
-				// Mantener controles de teclado para desarrollo
-				else {
-					if (keyStates['KeyW']) {
-						playerVelocity.add(getForwardVector().multiplyScalar(currentSpeed));
-					}
-					if (keyStates['KeyS']) {
-						playerVelocity.add(getForwardVector().multiplyScalar(-currentSpeed));
-					}
-					if (keyStates['KeyA']) {
-						playerVelocity.add(getSideVector().multiplyScalar(-currentSpeed));
-					}
-					if (keyStates['KeyD']) {
-						playerVelocity.add(getSideVector().multiplyScalar(currentSpeed));
-					}
-					if (playerOnFloor && keyStates['Space']) {
-						playerVelocity.y = 8;
-					}
-					if (keyStates['ShiftLeft']) {
-						isSprinting = true;
-					} else {
-						isSprinting = false;
-					}
-				}
-			}
-
-			// 5. Modificar la función animate() para VR
-			
-			// 6. Configuración inicial de VR
-			
-			// Crear botón VR
-			document.body.appendChild(VRButton.createButton(renderer));
-			
-			// Inicializar controles VR
-			setupVRControllers();
-			
-			// Iniciar el bucle de animación
-			
-			
-		
-			// (Mantener todas las funciones de colisiones, monstruo, puntos, etc.)
-			
-			// Asegurarse de que el audio funcione en VR
-			renderer.xr.addEventListener('sessionstart', () => {
-				audioListener.context.resume();
-				gameMusic.play();
-			});
-			
-			renderer.xr.addEventListener('sessionend', () => {
-				gameMusic.pause();
-			});
-
-			// Configurar el evento de resize
-			window.addEventListener('resize', onWindowResize);
-			function onWindowResize() {
-				camera.aspect = window.innerWidth / window.innerHeight;
-				camera.updateProjectionMatrix();
-				renderer.setSize(window.innerWidth, window.innerHeight);
-			}
-
-			function playerCollisions() {
-				const result = worldOctree.capsuleIntersect(playerCollider);
-				playerOnFloor = false;
-
-				if (result) {
-					playerOnFloor = result.normal.y > 0;
-
-					if (!playerOnFloor) {
-						playerVelocity.addScaledVector(result.normal, -result.normal.dot(playerVelocity));
-					}
-
-					if (result.depth >= 1e-10) {
-						playerCollider.translate(result.normal.multiplyScalar(result.depth));
-					}
-				}
-			}
-
-			function updatePlayer(deltaTime) {
-				if (gameOver) return;
-				
-				let damping = Math.exp(-4 * deltaTime) - 1;
-
-				if (!playerOnFloor) {
-					playerVelocity.y -= GRAVITY * deltaTime;
-					damping *= 0.2;
-					headBobActive = false;
-				}
-
-				playerVelocity.addScaledVector(playerVelocity, damping);
-				const deltaPosition = playerVelocity.clone().multiplyScalar(deltaTime);
-				playerCollider.translate(deltaPosition);
-				playerCollisions();
-				
-				smoothCameraTarget.copy(playerCollider.end);
-				smoothCameraPosition.lerp(smoothCameraTarget, lerpFactor);
-				cameraContainer.position.copy(smoothCameraPosition);
-				
-				const speed = playerVelocity.length();
-				if (playerOnFloor && speed > 1) {
-					headBobActive = true;
-					const headBobSpeed = isSprinting ? headBobSpeedRun : headBobSpeedWalk;
-					headBobTime += deltaTime * headBobSpeed;
-					
-					if (!walkSound.isPlaying) walkSound.play();
-					
-					const headBobY = Math.sin(headBobTime) * headBobAmount * (isSprinting ? 1.5 : 1);
-					camera.position.y = -0.1 + headBobY;
-					
-					const headBobX = Math.sin(headBobTime * 0.5) * headBobAmount * 0.3;
-					camera.rotation.z = headBobX;
-					
-					const headBobZ = Math.sin(headBobTime * 0.8) * headBobAmount * 0.2;
-					camera.position.z = headBobZ;
-				} else {
-					if (headBobActive) {
-						camera.position.y = THREE.MathUtils.lerp(camera.position.y, -0.1, deltaTime * 5);
-						camera.position.z = THREE.MathUtils.lerp(camera.position.z, 0, deltaTime * 5);
-						camera.rotation.z = THREE.MathUtils.lerp(camera.rotation.z, 0, deltaTime * 5);
-						
-						if (Math.abs(camera.rotation.z) < 0.001) {
-							headBobActive = false;
-							headBobTime = 0;
-							camera.rotation.z = 0;
-							camera.position.set(0, -0.1, 0);
-						}
-					}
-				}
-				if (!headBobActive && playerOnFloor && playerVelocity.length() < 0.5) {
-					const breathTime = performance.now() * 0.001;
-					camera.position.y = -0.1 + Math.sin(breathTime * 0.5) * 0.01;
-				}
-
-				if (!playerOnFloor || playerVelocity.length() < 0.2) {
-					if (walkSound.isPlaying) walkSound.stop();
-				}
-			}
-
-			function teleportPlayerIfOob() {
-				if (cameraContainer.position.y <= -60) {
-					playerCollider.start.set(0, 0.35, 0);
-					playerCollider.end.set(0, 1, 0);
-					playerCollider.radius = 0.35;
-					smoothCameraTarget.set(0, 1, 0);
-					smoothCameraPosition.set(0, 1, 0);
-					cameraContainer.position.set(0, 1, 0);
-					cameraContainer.rotation.set(0, 0, 0);
-					camera.rotation.set(0, 0, 0);
-					playerVelocity.set(0, 0, 0);
-				}
-			}
-
-						function updateMonster(deltaTime) {
+			function updateMonster(deltaTime) {
 				if (!monster || gameOver) return;
 
 				// Declaración al inicio
@@ -1105,6 +561,539 @@
 				monsterSpawned = true;
 			}
 
+			function updatePlayer(deltaTime) {
+				if (gameOver) return;
+				
+				let damping = Math.exp(-4 * deltaTime) - 1;
+
+				if (!playerOnFloor) {
+					playerVelocity.y -= GRAVITY * deltaTime;
+					damping *= 0.2;
+					headBobActive = false;
+				}
+
+				playerVelocity.addScaledVector(playerVelocity, damping);
+				const deltaPosition = playerVelocity.clone().multiplyScalar(deltaTime);
+				playerCollider.translate(deltaPosition);
+				playerCollisions();
+				
+				smoothCameraTarget.copy(playerCollider.end);
+				smoothCameraPosition.lerp(smoothCameraTarget, lerpFactor);
+				cameraContainer.position.copy(smoothCameraPosition);
+				
+				const speed = playerVelocity.length();
+				if (playerOnFloor && speed > 1) {
+					headBobActive = true;
+					const headBobSpeed = isSprinting ? headBobSpeedRun : headBobSpeedWalk;
+					headBobTime += deltaTime * headBobSpeed;
+					
+					if (!walkSound.isPlaying) walkSound.play();
+					
+					const headBobY = Math.sin(headBobTime) * headBobAmount * (isSprinting ? 1.5 : 1);
+					camera.position.y = -0.1 + headBobY;
+					
+					const headBobX = Math.sin(headBobTime * 0.5) * headBobAmount * 0.3;
+					camera.rotation.z = headBobX;
+					
+					const headBobZ = Math.sin(headBobTime * 0.8) * headBobAmount * 0.2;
+					camera.position.z = headBobZ;
+				} else {
+					if (headBobActive) {
+						camera.position.y = THREE.MathUtils.lerp(camera.position.y, -0.1, deltaTime * 5);
+						camera.position.z = THREE.MathUtils.lerp(camera.position.z, 0, deltaTime * 5);
+						camera.rotation.z = THREE.MathUtils.lerp(camera.rotation.z, 0, deltaTime * 5);
+						
+						if (Math.abs(camera.rotation.z) < 0.001) {
+							headBobActive = false;
+							headBobTime = 0;
+							camera.rotation.z = 0;
+							camera.position.set(0, -0.1, 0);
+						}
+					}
+				}
+				if (!headBobActive && playerOnFloor && playerVelocity.length() < 0.5) {
+					const breathTime = performance.now() * 0.001;
+					camera.position.y = -0.1 + Math.sin(breathTime * 0.5) * 0.01;
+				}
+
+				if (!playerOnFloor || playerVelocity.length() < 0.2) {
+					if (walkSound.isPlaying) walkSound.stop();
+				}
+			}
+
+			function winGame() {
+				if (gameOver) return;
+				gameOver = true;
+				gameMusic.stop();
+				winMusic.play();
+				document.getElementById('winScreen').style.display = 'flex';
+			}
+
+			function checkPointCollisions() {
+				const playerSphere = new THREE.Sphere(playerCollider.end, playerCollider.radius);
+
+				pointObjects.forEach((point, index) => {
+					if (!point.collected && playerSphere.intersectsSphere(point.collider)) {
+					point.collected = true;
+					// scene.remove(point.model); // <- probar comentado si hay problema
+					point.model.visible = false; // <- solución alternativa segura
+					points++;
+
+					document.getElementById('scoreDisplay').textContent = `Puntos: ${points}/3`;
+
+					if (pointSound.isPlaying) pointSound.stop();
+					if (pointSound.buffer) pointSound.play();
+
+					if (points >= 3) {
+						winGame();
+					}
+				}
+			});
+			}
+
+			function createPoints() {
+				// Mezclar las posiciones y tomar las primeras 4
+				const shuffledPositions = [...possiblePositions].sort(() => 0.5 - Math.random()).slice(0, 4);
+				
+				const pointLoader = new GLTFLoader();
+				pointLoader.load('models/gltf/punto.glb', (gltf) => {
+					gltf.scene.scale.set(0.4, 0.4, 0.4); // Escala pequeña
+					
+					shuffledPositions.forEach(pos => {
+						const pointClone = gltf.scene.clone();
+						pointClone.position.set(pos.x, pos.y, pos.z);
+						
+						// Crear collider para el punto
+						const pointCollider = new THREE.Sphere(new THREE.Vector3(pos.x, pos.y, pos.z), 0.5);
+						
+						scene.add(pointClone);
+						pointObjects.push({
+							model: pointClone,
+							collider: pointCollider,
+							collected: false
+						});
+					});
+				});
+			}
+
+			function setupMonster() {
+				const fbxLoader = new FBXLoader();
+				
+				fbxLoader.load('models/fbx/mons.fbx', (fbx) => {
+					monster = fbx;
+					monster.scale.set(0.01, 0.01, 0.01);
+					
+					// Posición inicial basada en el collider
+					monster.position.copy(monsterInitialPos);
+					monster.position.y -= 0.8; // Ajuste para que los pies estén en el suelo
+					
+					monster.traverse(child => {
+						if (child.isMesh) {
+							child.castShadow = true;
+							child.receiveShadow = true;
+						}
+					});
+					
+					scene.add(monster);
+					
+					fbxLoader.load('models/fbx/run.fbx', (animFbx) => {
+						monsterMixer = new THREE.AnimationMixer(monster);
+						monsterRunAction = monsterMixer.clipAction(animFbx.animations[0]);
+						monsterRunAction.play();
+					});
+
+					fbxLoader.load('models/fbx/rugido.fbx', (roarAnim) => {
+						monsterRoarAction = monsterMixer.clipAction(roarAnim.animations[0]);
+						monsterRoarAction.setLoop(THREE.LoopOnce);
+						monsterRunAction.play();
+					});
+				});
+			}
+
+			loader.load('maybe.glb', (gltf) => {
+				gltf.scene.position.y = 30;
+				scene.add(gltf.scene);
+		
+				worldOctree.fromGraphNode(gltf.scene);
+				createPoints()
+
+				gltf.scene.traverse(child => {
+					if (child.isMesh && child.material) {
+						child.castShadow = true;
+						child.receiveShadow = true;
+						if (child.material.color) {
+							child.material.color.multiplyScalar(0.87);
+						}
+						if (child.material.emissive) {
+							child.material.emissive.set(0x000000);
+						}
+						if (child.material.map) {
+							child.material.map.anisotropy = 4;
+						}
+					}
+    
+				
+					
+				});
+
+				// Octree Debug Helper
+				const helper = new OctreeHelper(worldOctree);
+				helper.visible = false;
+				scene.add(helper);
+
+				// Configurar el monstruo después de cargar el mapa
+				setupMonster();
+			});
+
+// HASTA AQUI BIENEEEEEE ------------------------------
+			function restartGame() {
+				gameOver = false;
+				document.getElementById('gameOver').style.display = 'none';
+				document.getElementById('winScreen').style.display = 'none';
+				
+				//sonidos
+				startMusic.stop();
+				gameMusic.play();
+				winMusic.stop();
+				loseMusic.stop();
+
+				// Resetear jugador
+				playerCollider.start.copy(initialPlayerPos);
+				playerCollider.end.copy(new THREE.Vector3(initialPlayerPos.x, initialPlayerPos.y + 0.65, initialPlayerPos.z));
+				playerVelocity.set(0, 0, 0);
+				
+				// Resetear monstruo
+				monsterSpawned = false;
+				monsterSpawnTimer = 0;
+				monsterVelocity.set(0, 0, 0);
+				
+				// Resetear puntos
+				points = 0;
+				document.getElementById('scoreDisplay').textContent = 'Puntos: 0/3';
+				
+				// Eliminar puntos antiguos
+				pointObjects.forEach(point => {
+				scene.remove(point.model);
+				});
+				pointObjects = [];
+				
+				// Crear nuevos puntos
+			}
+
+			document.getElementById('restartButton').addEventListener('click', restartGame);
+			document.getElementById('playAgainButton').addEventListener('click', restartGame);
+			document.getElementById('startButton').addEventListener('click', () => {
+				document.getElementById('startScreen').style.display = 'none';
+				startMusic.stop();
+				gameMusic.play();
+			});
+
+			document.addEventListener('keydown', (event) => {
+				keyStates[event.code] = true;
+			});
+
+			document.addEventListener('keyup', (event) => {
+				keyStates[event.code] = false;
+			});
+
+			container.addEventListener('mousedown', () => {
+				if (!gameOver) {
+					document.body.requestPointerLock();
+				}
+			});
+
+			document.body.addEventListener('mousemove', (event) => {
+				if (document.pointerLockElement === document.body && !gameOver) {
+					camera.rotation.y -= event.movementX / 500;
+					camera.rotation.x -= event.movementY / 500;
+				}
+			});
+
+			document.getElementById('restartButton').addEventListener('click', restartGame);
+
+			window.addEventListener('resize', onWindowResize);
+
+
+			// Configurar el monstruo
+
+			function monsterCollisions() {
+				const result = worldOctree.capsuleIntersect(monsterCollider);
+				monsterOnFloor = false;
+
+				if (result) {
+					monsterOnFloor = result.normal.y > 0;
+					if (!monsterOnFloor) {
+						monsterVelocity.addScaledVector(result.normal, -result.normal.dot(monsterVelocity));
+					}
+					if (result.depth >= 1e-10) {
+						monsterCollider.translate(result.normal.multiplyScalar(result.depth));
+					}
+					monsterCollider.translate(new THREE.Vector3(0, -result.depth * 0.5, 0));
+				}
+			}
+
+			// Nueva función para actualizar el camino
+			function updateMonsterPath() {
+				monsterPath.length = 0;
+				const playerPos = cameraContainer.position.clone();
+				const monsterPos = monsterCollider.end.clone();
+				
+				// Punto intermedio para evitar obstáculos (ajusta según tu mapa)
+				const intermediatePoint = monsterPos.clone().lerp(playerPos, 0.5);
+				intermediatePoint.y = monsterPos.y; // Mantener misma altura
+				
+				// Añadir puntos de ruta
+				monsterPath.push(intermediatePoint);
+				monsterPath.push(playerPos);
+				currentPathIndex = 0;
+			}
+				
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+			}
+
+			function controls(deltaTime) {
+				if (gameOver) return;
+				
+				const speedDelta = deltaTime * (playerOnFloor ? 25 : 8);
+				
+				if (isSprinting) {
+					sprintTimeRemaining -= deltaTime;
+					if (sprintTimeRemaining <= 0) {
+						isSprinting = false;
+						sprintCooldownRemaining = sprintCooldown;
+					}
+				} else if (sprintCooldownRemaining > 0) {
+					sprintCooldownRemaining -= deltaTime;
+				}
+				
+				if (keyStates['ShiftLeft'] && playerOnFloor && !isSprinting && sprintCooldownRemaining <= 0) {
+					isSprinting = true;
+					sprintTimeRemaining = sprintDuration;
+				}
+				
+				const currentSpeed = isSprinting ? speedDelta * 1.8 : speedDelta;
+				
+				if (keyStates['KeyW']) {
+					playerVelocity.add(getForwardVector().multiplyScalar(currentSpeed));
+				}
+
+				if (keyStates['KeyS']) {
+					playerVelocity.add(getForwardVector().multiplyScalar(-currentSpeed));
+				}
+
+				if (keyStates['KeyA']) {
+					playerVelocity.add(getSideVector().multiplyScalar(-currentSpeed));
+				}
+
+				if (keyStates['KeyD']) {
+					playerVelocity.add(getSideVector().multiplyScalar(currentSpeed));
+				}
+
+				if (playerOnFloor && keyStates['Space']) {
+					playerVelocity.y = 8;
+				}
+			}
+
+			controllers.forEach(controller => {
+					scene.add(controller);
+					
+					controller.addEventListener('selectstart', onSelectStart);
+					controller.addEventListener('selectend', onSelectEnd);
+					controller.addEventListener('squeezestart', onSqueezeStart);
+					controller.addEventListener('squeezeend', onSqueezeEnd);
+			});
+
+			movementController = controllers[0];
+
+			let frameCount = 0;
+				
+				// Actualizar el monstruo
+				// updateMonster(deltaTime);
+
+				// checkPointCollisions();
+				
+				// Imprimir coordenadas cada 60 frames (aproximadamente 1 vez por segundo)
+				frameCount++;
+				if (frameCount % 60 === 0) {
+					// Coordenadas del jugador
+					console.log('Jugador - Posición:', {
+						x: cameraContainer.position.x.toFixed(2),
+						y: cameraContainer.position.y.toFixed(2),
+						z: cameraContainer.position.z.toFixed(2)
+					});
+					
+					// Coordenadas del monstruo (si existe)
+					if (monster) {
+						console.log('Monstruo - Posición:', {
+							x: monster.position.x.toFixed(2),
+							y: monster.position.y.toFixed(2),
+							z: monster.position.z.toFixed(2)
+						});
+						
+						// También puedes imprimir la distancia entre jugador y monstruo
+						const distance = monster.position.distanceTo(cameraContainer.position);
+						console.log(`Distancia entre jugador y monstruo: ${distance.toFixed(2)} unidades`);
+					}
+				}
+				
+				renderer.render(scene, camera);
+				stats.update();
+			}
+
+					// Event handlers para los controles
+			function onSelectStart(event) {
+				// Saltar cuando se presiona el gatillo
+				if (playerOnFloor) {
+					playerVelocity.y = 8;
+				}
+			}
+			
+			function onSelectEnd(event) {
+				// Puedes añadir lógica al soltar el gatillo
+			}
+			
+			function onSqueezeStart(event) {
+				// Correr cuando se presiona el botón grip
+				isSprinting = true;
+			}
+			
+			function onSqueezeEnd(event) {
+				// Dejar de correr al soltar
+				isSprinting = false;
+			}
+			
+			// NUEVO PARA VR: Movimiento basado en joystick
+			function getMovementFromController() {
+				if (!movementController || !renderer.xr.isPresenting) return new THREE.Vector3();
+				
+				const session = renderer.xr.getSession();
+				if (!session) return new THREE.Vector3();
+				
+				const inputSource = session.inputSources[0]; // Controlador izquierdo
+				if (!inputSource || !inputSource.gamepad) return new THREE.Vector3();
+				
+				const gamepad = inputSource.gamepad;
+				const xAxis = gamepad.axes[2] || 0;
+				const yAxis = gamepad.axes[3] || 0;
+				
+				// Crear vector de movimiento basado en el joystick
+				const movement = new THREE.Vector3(xAxis, 0, -yAxis);
+				movement.normalize();
+				
+				// Aplicar la rotación de la cámara (cabeza del usuario)
+				movement.applyQuaternion(camera.quaternion);
+				movement.y = 0; // No queremos movimiento vertical
+				
+				return movement;
+			}
+			
+			function setupVRControllers() {
+				controllers = [
+					renderer.xr.getController(0),
+					renderer.xr.getController(1)
+				];
+				
+				controllerGrips = [
+					renderer.xr.getControllerGrip(0),
+					renderer.xr.getControllerGrip(1)
+				];
+				
+				// Añadir modelos a los controles
+				controllerGrips.forEach((grip, i) => {
+					grip.add(controllerModelFactory.createControllerModel(grip));
+					scene.add(grip);
+			});
+
+			// 4. Modificar la función controls() para usar VR
+			function controls(deltaTime) {
+				if (gameOver) return;
+				
+				const speedDelta = deltaTime * (playerOnFloor ? 25 : 8);
+				const currentSpeed = isSprinting ? speedDelta * 1.8 : speedDelta;
+				
+				// NUEVO PARA VR: Movimiento con joystick en lugar de teclado
+				if (renderer.xr.isPresenting) {
+					const movement = getMovementFromController().multiplyScalar(currentSpeed);
+					playerVelocity.add(movement);
+				} 
+				// Mantener controles de teclado para desarrollo
+				else {
+					if (keyStates['KeyW']) {
+						playerVelocity.add(getForwardVector().multiplyScalar(currentSpeed));
+					}
+					if (keyStates['KeyS']) {
+						playerVelocity.add(getForwardVector().multiplyScalar(-currentSpeed));
+					}
+					if (keyStates['KeyA']) {
+						playerVelocity.add(getSideVector().multiplyScalar(-currentSpeed));
+					}
+					if (keyStates['KeyD']) {
+						playerVelocity.add(getSideVector().multiplyScalar(currentSpeed));
+					}
+					if (playerOnFloor && keyStates['Space']) {
+						playerVelocity.y = 8;
+					}
+					if (keyStates['ShiftLeft']) {
+						isSprinting = true;
+					} else {
+						isSprinting = false;
+					}
+				}
+			}
+
+			// 5. Modificar la función animate() para VR
+			
+			// 6. Configuración inicial de VR
+			
+			// Crear botón VR
+			document.body.appendChild(VRButton.createButton(renderer));
+			
+			// Inicializar controles VR
+			setupVRControllers();
+			
+			// Iniciar el bucle de animación
+			
+			
+		
+			// (Mantener todas las funciones de colisiones, monstruo, puntos, etc.)
+			
+			// Asegurarse de que el audio funcione en VR
+			renderer.xr.addEventListener('sessionstart', () => {
+				audioListener.context.resume();
+				gameMusic.play();
+			});
+			
+			renderer.xr.addEventListener('sessionend', () => {
+				gameMusic.pause();
+			});
+
+			// Configurar el evento de resize
+			window.addEventListener('resize', onWindowResize);
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
+			}
+
+			function playerCollisions() {
+				const result = worldOctree.capsuleIntersect(playerCollider);
+				playerOnFloor = false;
+
+				if (result) {
+					playerOnFloor = result.normal.y > 0;
+
+					if (!playerOnFloor) {
+						playerVelocity.addScaledVector(result.normal, -result.normal.dot(playerVelocity));
+					}
+
+					if (result.depth >= 1e-10) {
+						playerCollider.translate(result.normal.multiplyScalar(result.depth));
+					}
+				}
+			}
 
 			function animate() {
 				const deltaTime = Math.min(0.05, clock.getDelta()) / STEPS_PER_FRAME;
