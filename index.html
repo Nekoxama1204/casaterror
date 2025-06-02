@@ -386,7 +386,7 @@
 				});
 			}
 
-						function setupMonster() {
+			function setupMonster() {
 				const fbxLoader = new FBXLoader();
 				
 				fbxLoader.load('models/fbx/mons.fbx', (fbx) => {
@@ -721,22 +721,6 @@
 				renderer.setSize(window.innerWidth, window.innerHeight);
 			}
 
-			function playerCollisions() {
-				const result = worldOctree.capsuleIntersect(playerCollider);
-				playerOnFloor = false;
-
-				if (result) {
-					playerOnFloor = result.normal.y > 0;
-
-					if (!playerOnFloor) {
-						playerVelocity.addScaledVector(result.normal, -result.normal.dot(playerVelocity));
-					}
-
-					if (result.depth >= 1e-10) {
-						playerCollider.translate(result.normal.multiplyScalar(result.depth));
-					}
-				}
-			}
 
 			function startRoar() {
 				isRoaring = true;
@@ -1045,7 +1029,24 @@
 				renderer.setSize(window.innerWidth, window.innerHeight);
 			}
 
-						function updatePlayer(deltaTime) {
+			function playerCollisions() {
+				const result = worldOctree.capsuleIntersect(playerCollider);
+				playerOnFloor = false;
+
+				if (result) {
+					playerOnFloor = result.normal.y > 0;
+
+					if (!playerOnFloor) {
+						playerVelocity.addScaledVector(result.normal, -result.normal.dot(playerVelocity));
+					}
+
+					if (result.depth >= 1e-10) {
+						playerCollider.translate(result.normal.multiplyScalar(result.depth));
+					}
+				}
+			}
+
+			function updatePlayer(deltaTime) {
 				if (gameOver) return;
 				
 				let damping = Math.exp(-4 * deltaTime) - 1;
