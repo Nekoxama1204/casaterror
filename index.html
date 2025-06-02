@@ -509,143 +509,6 @@
 			}
 
 			// Actualizar posición del monstruo
-			function updateMonster(deltaTime) {
-				if (!monster || gameOver) return;
-
-				// Declaración al inicio
-				const distanceToPlayer = monsterCollider.end.distanceTo(cameraContainer.position);
-				const currentTime = clock.getElapsedTime();
-				const isInRoarStopPeriod = currentTime < roarStopTime;
-				
-				
-
-				if (!monsterSpawned) {
-					monsterSpawnTimer += deltaTime;
-					if (monsterSpawnTimer >= 3) {
-						monsterCollider.start.copy(monsterInitialPos);
-						monsterCollider.end.set(monsterInitialPos.x, monsterInitialPos.y + 0.65, monsterInitialPos.z);
-						monster.position.copy(monsterCollider.end);
-						monster.position.y -= 0.8;
-						monsterSpawned = true;
-						updateMonsterPath();
-					} else {
-						return;
-					}
-				}
-
-				// Actualizar ruta periódicamente
-				pathUpdateTimer += deltaTime;
-				if (pathUpdateTimer >= pathUpdateInterval) {
-					updateMonsterPath();
-					pathUpdateTimer = 0;
-				}
-
-				// Aplicar gravedad
-				let damping = Math.exp(-4 * deltaTime) - 1;
-				if (!monsterOnFloor) {
-					monsterVelocity.y -= GRAVITY * deltaTime;
-					damping *= 0.2;
-				}
-				monsterVelocity.addScaledVector(monsterVelocity, damping);
-
-				// Movimiento solo si está en el suelo
-				if (monsterOnFloor && monsterPath.length > 0 && !isInRoarStopPeriod) {
-					const targetPoint = monsterPath[currentPathIndex];
-					const direction = new THREE.Vector3().subVectors(targetPoint, monsterCollider.end);
-					direction.y = 0;
-
-					if (!monsterWalkSound.isPlaying) monsterWalkSound.play();
-					
-					if (direction.length() < 1.5) {
-						currentPathIndex = Math.min(currentPathIndex + 1, monsterPath.length - 1);
-					}
-					
-					if (direction.length() > 0.1) {
-						direction.normalize();
-						const speedMultiplier = Math.min(1, direction.length() / 5);
-						monsterVelocity.add(direction.multiplyScalar(monsterSpeed * speedMultiplier * deltaTime));
-						
-						const targetQuat = new THREE.Quaternion().setFromUnitVectors(
-							new THREE.Vector3(0, 0, 1),
-							direction.clone().normalize()
-						);
-						monster.quaternion.slerp(targetQuat, deltaTime * 5);
-					}
-				}
-
-				if (!isRoaring && !monsterRunAction.isRunning() && !isInRoarStopPeriod) {
-					monsterRunAction.play();
-				}
-
-
-				// Manejo del rugido
-				if (!isRoaring && distanceToPlayer <= roarDistance && 
-					(currentTime - lastRoarTime) > roarCooldown &&
-					!isInRoarStopPeriod) {
-					startRoar();
-				}
-
-				if (isRoaring) {
-					// Durante el rugido, no hacer nada (ya se maneja en startRoar)
-				} else if (!isInRoarStopPeriod) {
-					// Si no está rugiendo ni en periodo de espera, reanudar correr si no está activo
-					if (!monsterRunAction.isRunning()) {
-						monsterRunAction.play();
-					}
-				}
-				
-				// Detección de ataque
-				if (distanceToPlayer < monsterAttackDistance && !gameOver) {
-					gameOver = true;
-					gameMusic.stop();
-					loseMusic.play();
-					screamSound.play();
-					document.getElementById('gameOver').style.display = 'flex';
-				}
-
-				// Actualizar posición física
-				const deltaPosition = monsterVelocity.clone().multiplyScalar(deltaTime);
-				monsterCollider.translate(deltaPosition);
-				monsterCollisions();
-
-				// Sincronizar modelo 3D
-				monster.position.copy(monsterCollider.end);
-				monster.position.y -= 0.8;
-
-				// Actualizar animación
-				if (monsterMixer) monsterMixer.update(deltaTime);
-
-				if (!monsterOnFloor || isInRoarStopPeriod || gameOver) {
-					if (monsterWalkSound.isPlaying) monsterWalkSound.stop();
-				}
-			}
-
-			if (monsterSpawnTimer >= 10 && !monsterSpawned) {
-				// Efecto de sonido
-				const spawnSound = new THREE.Audio(audioListener);
-				audioLoader.load('spawnsound.mp3', function(buffer) {
-					spawnSound.setBuffer(buffer);
-					spawnSound.play();
-				});
-				
-				// Efecto visual (partículas o luz)
-				const spawnLight = new THREE.PointLight(0xff0000, 5, 5);
-				spawnLight.position.copy(monsterInitialPos); // Cambiado para que la luz aparezca donde el monstruo
-				scene.add(spawnLight);
-				
-				setTimeout(() => {
-					scene.remove(spawnLight);
-				}, 1000);
-				
-				// Posicionar al monstruo CORRECTAMENTE
-				monsterCollider.start.copy(monsterInitialPos);
-				monsterCollider.end.set(monsterInitialPos.x, monsterInitialPos.y + 0.65, monsterInitialPos.z);
-				monster.position.copy(monsterInitialPos);
-				monster.position.y -= 0.8; // Ajuste visual para la altura del modelo
-				
-				monsterSpawned = true;
-			}
-
 			// Reiniciar el juego
 			function restartGame() {
 				gameOver = false;
@@ -1104,6 +967,144 @@
 					playerVelocity.set(0, 0, 0);
 				}
 			}
+
+						function updateMonster(deltaTime) {
+				if (!monster || gameOver) return;
+
+				// Declaración al inicio
+				const distanceToPlayer = monsterCollider.end.distanceTo(cameraContainer.position);
+				const currentTime = clock.getElapsedTime();
+				const isInRoarStopPeriod = currentTime < roarStopTime;
+				
+				
+
+				if (!monsterSpawned) {
+					monsterSpawnTimer += deltaTime;
+					if (monsterSpawnTimer >= 3) {
+						monsterCollider.start.copy(monsterInitialPos);
+						monsterCollider.end.set(monsterInitialPos.x, monsterInitialPos.y + 0.65, monsterInitialPos.z);
+						monster.position.copy(monsterCollider.end);
+						monster.position.y -= 0.8;
+						monsterSpawned = true;
+						updateMonsterPath();
+					} else {
+						return;
+					}
+				}
+
+				// Actualizar ruta periódicamente
+				pathUpdateTimer += deltaTime;
+				if (pathUpdateTimer >= pathUpdateInterval) {
+					updateMonsterPath();
+					pathUpdateTimer = 0;
+				}
+
+				// Aplicar gravedad
+				let damping = Math.exp(-4 * deltaTime) - 1;
+				if (!monsterOnFloor) {
+					monsterVelocity.y -= GRAVITY * deltaTime;
+					damping *= 0.2;
+				}
+				monsterVelocity.addScaledVector(monsterVelocity, damping);
+
+				// Movimiento solo si está en el suelo
+				if (monsterOnFloor && monsterPath.length > 0 && !isInRoarStopPeriod) {
+					const targetPoint = monsterPath[currentPathIndex];
+					const direction = new THREE.Vector3().subVectors(targetPoint, monsterCollider.end);
+					direction.y = 0;
+
+					if (!monsterWalkSound.isPlaying) monsterWalkSound.play();
+					
+					if (direction.length() < 1.5) {
+						currentPathIndex = Math.min(currentPathIndex + 1, monsterPath.length - 1);
+					}
+					
+					if (direction.length() > 0.1) {
+						direction.normalize();
+						const speedMultiplier = Math.min(1, direction.length() / 5);
+						monsterVelocity.add(direction.multiplyScalar(monsterSpeed * speedMultiplier * deltaTime));
+						
+						const targetQuat = new THREE.Quaternion().setFromUnitVectors(
+							new THREE.Vector3(0, 0, 1),
+							direction.clone().normalize()
+						);
+						monster.quaternion.slerp(targetQuat, deltaTime * 5);
+					}
+				}
+
+				if (!isRoaring && !monsterRunAction.isRunning() && !isInRoarStopPeriod) {
+					monsterRunAction.play();
+				}
+
+
+				// Manejo del rugido
+				if (!isRoaring && distanceToPlayer <= roarDistance && 
+					(currentTime - lastRoarTime) > roarCooldown &&
+					!isInRoarStopPeriod) {
+					startRoar();
+				}
+
+				if (isRoaring) {
+					// Durante el rugido, no hacer nada (ya se maneja en startRoar)
+				} else if (!isInRoarStopPeriod) {
+					// Si no está rugiendo ni en periodo de espera, reanudar correr si no está activo
+					if (!monsterRunAction.isRunning()) {
+						monsterRunAction.play();
+					}
+				}
+				
+				// Detección de ataque
+				if (distanceToPlayer < monsterAttackDistance && !gameOver) {
+					gameOver = true;
+					gameMusic.stop();
+					loseMusic.play();
+					screamSound.play();
+					document.getElementById('gameOver').style.display = 'flex';
+				}
+
+				// Actualizar posición física
+				const deltaPosition = monsterVelocity.clone().multiplyScalar(deltaTime);
+				monsterCollider.translate(deltaPosition);
+				monsterCollisions();
+
+				// Sincronizar modelo 3D
+				monster.position.copy(monsterCollider.end);
+				monster.position.y -= 0.8;
+
+				// Actualizar animación
+				if (monsterMixer) monsterMixer.update(deltaTime);
+
+				if (!monsterOnFloor || isInRoarStopPeriod || gameOver) {
+					if (monsterWalkSound.isPlaying) monsterWalkSound.stop();
+				}
+			}
+
+			if (monsterSpawnTimer >= 10 && !monsterSpawned) {
+				// Efecto de sonido
+				const spawnSound = new THREE.Audio(audioListener);
+				audioLoader.load('spawnsound.mp3', function(buffer) {
+					spawnSound.setBuffer(buffer);
+					spawnSound.play();
+				});
+				
+				// Efecto visual (partículas o luz)
+				const spawnLight = new THREE.PointLight(0xff0000, 5, 5);
+				spawnLight.position.copy(monsterInitialPos); // Cambiado para que la luz aparezca donde el monstruo
+				scene.add(spawnLight);
+				
+				setTimeout(() => {
+					scene.remove(spawnLight);
+				}, 1000);
+				
+				// Posicionar al monstruo CORRECTAMENTE
+				monsterCollider.start.copy(monsterInitialPos);
+				monsterCollider.end.set(monsterInitialPos.x, monsterInitialPos.y + 0.65, monsterInitialPos.z);
+				monster.position.copy(monsterInitialPos);
+				monster.position.y -= 0.8; // Ajuste visual para la altura del modelo
+				
+				monsterSpawned = true;
+			}
+
 
 			function animate() {
 				const deltaTime = Math.min(0.05, clock.getDelta()) / STEPS_PER_FRAME;
