@@ -941,7 +941,7 @@
 				
 				renderer.render(scene, camera);
 				stats.update();
-			}
+			
 
 					// Event handlers para los controles
 			function onSelectStart(event) {
@@ -1006,6 +1006,8 @@
 					grip.add(controllerModelFactory.createControllerModel(grip));
 					scene.add(grip);
 			});
+
+		}
 
 			// 4. Modificar la función controls() para usar VR
 			function controls(deltaTime) {
