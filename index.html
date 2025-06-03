@@ -289,6 +289,7 @@
 			let sprintCooldown = 5;
 			let sprintTimeRemaining = 0;
 			let sprintCooldownRemaining = 0;
+			let isJumpingVR = false;
 			
 			// Head bob
 			let headBobActive = false;
@@ -848,54 +849,65 @@
 				currentPathIndex = 0;
 			}
 				
-
+			
 			function controls(deltaTime) {
-				if (gameOver) return;
-				
-				const speedDelta = deltaTime * (playerOnFloor ? 25 : 8);
-			
-				if (isSprinting) {
-					sprintTimeRemaining -= deltaTime;
-					if (sprintTimeRemaining <= 0) {
-						isSprinting = false;
-						sprintCooldownRemaining = sprintCooldown;
-					}
-				} else if (sprintCooldownRemaining > 0) {
-					sprintCooldownRemaining -= deltaTime;
-				}
-			
-				if (keyStates['ShiftLeft'] && playerOnFloor && !isSprinting && sprintCooldownRemaining <= 0) {
-					isSprinting = true;
-					sprintTimeRemaining = sprintDuration;
-				}
-			
-				const currentSpeed = isSprinting ? speedDelta * 1.8 : speedDelta;
-			
-				// Teclado
-				if (keyStates['KeyW']) {
-					playerVelocity.add(getForwardVector().multiplyScalar(currentSpeed));
-				}
-				if (keyStates['KeyS']) {
-					playerVelocity.add(getForwardVector().multiplyScalar(-currentSpeed));
-				}
-				if (keyStates['KeyA']) {
-					playerVelocity.add(getSideVector().multiplyScalar(-currentSpeed));
-				}
-				if (keyStates['KeyD']) {
-					playerVelocity.add(getSideVector().multiplyScalar(currentSpeed));
-				}
-			
-				// VR: Movimiento con joystick
-				const controllerMovement = getMovementFromController();
-				if (controllerMovement.lengthSq() > 0) {
-					playerVelocity.add(controllerMovement.multiplyScalar(currentSpeed));
-				}
-			
-				if (playerOnFloor && (keyStates['Space'])) {
-					playerVelocity.y = 8;
-				}
+			    if (gameOver) return;
+			    
+			    const speedDelta = deltaTime * (playerOnFloor ? 25 : 8);
+			    
+			    // Manejo del sprint (igual para ambos modos)
+			    if (isSprinting) {
+			        sprintTimeRemaining -= deltaTime;
+			        if (sprintTimeRemaining <= 0) {
+			            isSprinting = false;
+			            sprintCooldownRemaining = sprintCooldown;
+			        }
+			    } else if (sprintCooldownRemaining > 0) {
+			        sprintCooldownRemaining -= deltaTime;
+			    }
+			    
+			    // Modo VR
+			    if (renderer.xr.isPresenting) {
+			        const movement = getMovementFromController();
+			        
+			        if (movement.length() > 0.1) {
+			            const currentSpeed = isSprinting ? speedDelta * 1.8 : speedDelta;
+			            playerVelocity.add(movement.multiplyScalar(currentSpeed));
+			            
+			            // Activar sonido de caminar
+			            if (playerOnFloor && !walkSound.isPlaying) {
+			                walkSound.play();
+			            }
+			        }
+			    } 
+			    // Modo desktop
+			    else {
+			        if (keyStates['ShiftLeft'] && playerOnFloor && !isSprinting && sprintCooldownRemaining <= 0) {
+			            isSprinting = true;
+			            sprintTimeRemaining = sprintDuration;
+			        }
+			        
+			        const currentSpeed = isSprinting ? speedDelta * 1.8 : speedDelta;
+			        
+			        if (keyStates['KeyW']) {
+			            playerVelocity.add(getForwardVector().multiplyScalar(currentSpeed));
+			        }
+			        if (keyStates['KeyS']) {
+			            playerVelocity.add(getForwardVector().multiplyScalar(-currentSpeed));
+			        }
+			        if (keyStates['KeyA']) {
+			            playerVelocity.add(getSideVector().multiplyScalar(-currentSpeed));
+			        }
+			        if (keyStates['KeyD']) {
+			            playerVelocity.add(getSideVector().multiplyScalar(currentSpeed));
+			        }
+			    }
+			    
+			    // Salto (común para ambos modos)
+			    if (playerOnFloor && (keyStates['Space'] || isJumpingVR)) {
+			        playerVelocity.y = 8;
+			    }
 			}
-
 
 			controllers.forEach(controller => {
 					scene.add(controller);
@@ -967,47 +979,82 @@
 			
 			// NUEVO PARA VR: Movimiento basado en joystick
 			function getMovementFromController() {
-				if (!movementController || !renderer.xr.isPresenting) return new THREE.Vector3();
-				
-				const session = renderer.xr.getSession();
-				if (!session) return new THREE.Vector3();
-				
-				const inputSource = session.inputSources[0]; // Controlador izquierdo
-				if (!inputSource || !inputSource.gamepad) return new THREE.Vector3();
-				
-				const gamepad = inputSource.gamepad;
-				const xAxis = gamepad.axes[2] || 0;
-				const yAxis = gamepad.axes[3] || 0;
-				
-				// Crear vector de movimiento basado en el joystick
-				const movement = new THREE.Vector3(xAxis, 0, -yAxis);
-				movement.normalize();
-				
-				// Aplicar la rotación de la cámara (cabeza del usuario)
-				movement.applyQuaternion(camera.quaternion);
-				movement.y = 0; // No queremos movimiento vertical
-				
-				return movement;
-			}
+				    if (!renderer.xr.isPresenting || !movementController) return new THREE.Vector3();
+				    
+				    const session = renderer.xr.getSession();
+				    if (!session || !session.inputSources) return new THREE.Vector3();
+				    
+				    // Buscar el controlador con joystick (normalmente el izquierdo)
+				    const controller = session.inputSources.find(source => 
+				        source.gamepad && source.gamepad.axes && source.gamepad.axes.length >= 4
+				    );
+				    
+				    if (!controller || !controller.gamepad) return new THREE.Vector3();
+				    
+				    const gamepad = controller.gamepad;
+				    
+				    // Usar los ejes del joystick (normalmente ejes 2 y 3 para joystick izquierdo)
+				    const xAxis = gamepad.axes[2] || 0;
+				    const yAxis = gamepad.axes[3] || 0;
+				    
+				    // Aplicar deadzone para evitar drift
+				    const deadzone = 0.15;
+				    const appliedX = Math.abs(xAxis) > deadzone ? xAxis : 0;
+				    const appliedY = Math.abs(yAxis) > deadzone ? yAxis : 0;
+				    
+				    // Crear vector de movimiento basado en el joystick
+				    const movement = new THREE.Vector3(appliedX, 0, -appliedY);
+				    
+				    // Normalizar para movimiento diagonal
+				    if (movement.length() > 1) movement.normalize();
+				    
+				    // Aplicar la rotación de la cámara (cabeza del usuario)
+				    movement.applyQuaternion(camera.quaternion);
+				    movement.y = 0; // No queremos movimiento vertical
+				    
+				    return movement;
+				}
 			
-			function setupVRControllers() {
-				controllers = [
-					renderer.xr.getController(0),
-					renderer.xr.getController(1)
-				];
-				
-				controllerGrips = [
-					renderer.xr.getControllerGrip(0),
-					renderer.xr.getControllerGrip(1)
-				];
-				
-				// Añadir modelos a los controles
-				controllerGrips.forEach((grip, i) => {
-					grip.add(controllerModelFactory.createControllerModel(grip));
-					scene.add(grip);
-			});
-
-		}
+				function setupVRControllers() {
+				    controllers = [
+				        renderer.xr.getController(0),
+				        renderer.xr.getController(1)
+				    ];
+				    
+				    controllerGrips = [
+				        renderer.xr.getControllerGrip(0),
+				        renderer.xr.getControllerGrip(1)
+				    ];
+				    
+				    // Añadir modelos a los controles
+				    controllerGrips.forEach((grip, i) => {
+				        grip.add(controllerModelFactory.createControllerModel(grip));
+				        scene.add(grip);
+				    });
+				    
+				    controllers.forEach(controller => {
+				        scene.add(controller);
+				        
+				        controller.addEventListener('selectstart', () => {
+				            isJumpingVR = true;
+				        });
+				        
+				        controller.addEventListener('selectend', () => {
+				            isJumpingVR = false;
+				        });
+				        
+				        controller.addEventListener('squeezestart', () => {
+				            isSprinting = true;
+				        });
+				        
+				        controller.addEventListener('squeezeend', () => {
+				            isSprinting = false;
+				        });
+				    });
+				    
+				    // Asignar el controlador izquierdo como movimiento principal
+				    movementController = controllers[0];
+				}
 
 			
 			// Crear botón VR
@@ -1058,26 +1105,26 @@
 			}
 
 			function animate() {
-				const deltaTime = Math.min(0.05, clock.getDelta()) / STEPS_PER_FRAME;
-				
-				// NUEVO PARA VR: No necesitamos ajustar FOV en VR
-				if (!renderer.xr.isPresenting) {
-					const targetFov = isSprinting ? 120 : 70;
-					camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, deltaTime * 8);
-					camera.updateProjectionMatrix();
-				}
-				
-				for (let i = 0; i < STEPS_PER_FRAME; i++) {
-					controls(deltaTime);
-					updatePlayer(deltaTime);
-					teleportPlayerIfOob();
-				}
-				
-				updateMonster(deltaTime);
-				checkPointCollisions();
-				
-				renderer.render(scene, camera);
-				stats.update();
+			    const deltaTime = Math.min(0.05, clock.getDelta()) / STEPS_PER_FRAME;
+			    
+			    // Solo ajustar FOV si no estamos en VR
+			    if (!renderer.xr.isPresenting) {
+			        const targetFov = isSprinting ? 120 : 70;
+			        camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, deltaTime * 8);
+			        camera.updateProjectionMatrix();
+			    }
+			    
+			    for (let i = 0; i < STEPS_PER_FRAME; i++) {
+			        controls(deltaTime);
+			        updatePlayer(deltaTime);
+			        teleportPlayerIfOob();
+			    }
+			    
+			    updateMonster(deltaTime);
+			    checkPointCollisions();
+			    
+			    renderer.render(scene, camera);
+			    stats.update();
 			}
 
 			renderer.setAnimationLoop(animate);
