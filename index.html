@@ -711,7 +711,7 @@
 			}
 
 			loader.load('maybe.glb', (gltf) => {
-				gltf.scene.position.y = 30;
+				gltf.scene.position.y = 0;
 				scene.add(gltf.scene);
 		
 				worldOctree.fromGraphNode(gltf.scene);
