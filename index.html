@@ -853,7 +853,7 @@
 				if (gameOver) return;
 				
 				const speedDelta = deltaTime * (playerOnFloor ? 25 : 8);
-				
+			
 				if (isSprinting) {
 					sprintTimeRemaining -= deltaTime;
 					if (sprintTimeRemaining <= 0) {
@@ -863,34 +863,39 @@
 				} else if (sprintCooldownRemaining > 0) {
 					sprintCooldownRemaining -= deltaTime;
 				}
-				
+			
 				if (keyStates['ShiftLeft'] && playerOnFloor && !isSprinting && sprintCooldownRemaining <= 0) {
 					isSprinting = true;
 					sprintTimeRemaining = sprintDuration;
 				}
-				
+			
 				const currentSpeed = isSprinting ? speedDelta * 1.8 : speedDelta;
-				
+			
+				// Teclado
 				if (keyStates['KeyW']) {
 					playerVelocity.add(getForwardVector().multiplyScalar(currentSpeed));
 				}
-
 				if (keyStates['KeyS']) {
 					playerVelocity.add(getForwardVector().multiplyScalar(-currentSpeed));
 				}
-
 				if (keyStates['KeyA']) {
 					playerVelocity.add(getSideVector().multiplyScalar(-currentSpeed));
 				}
-
 				if (keyStates['KeyD']) {
 					playerVelocity.add(getSideVector().multiplyScalar(currentSpeed));
 				}
-
-				if (playerOnFloor && keyStates['Space']) {
+			
+				// VR: Movimiento con joystick
+				const controllerMovement = getMovementFromController();
+				if (controllerMovement.lengthSq() > 0) {
+					playerVelocity.add(controllerMovement.multiplyScalar(currentSpeed));
+				}
+			
+				if (playerOnFloor && (keyStates['Space'])) {
 					playerVelocity.y = 8;
 				}
 			}
+
 
 			controllers.forEach(controller => {
 					scene.add(controller);
