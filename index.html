@@ -722,8 +722,8 @@
 			    gltf.scene.position.y = 0;
 			    scene.add(gltf.scene);
 			    mapLoaded = true;
-   				console.log("Mapa marcado como cargado"
-			
+			    console.log("Mapa marcado como cargado");
+			    
 			    // Asegurar que todas las texturas y materiales sean compatibles con VR
 			    gltf.scene.traverse(child => {
 			        if (child.isMesh) {
@@ -758,7 +758,6 @@
 			}, undefined, (error) => {
 			    console.error("Error al cargar el mapa:", error);
 			});
-
 // HASTA AQUI BIENEEEEEE ------------------------------
 			function restartGame() {
 				gameOver = false;
