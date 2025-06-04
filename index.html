@@ -1025,41 +1025,6 @@
 				    
 				    return movement;
 				}
-
-				function updateCameraRotationFromJoystick(deltaTime) {
-					if (!renderer.xr.isPresenting) return;
-
-					const session = renderer.xr.getSession();
-					if (!session || !session.inputSources) return;
-
-					// Buscar el controlador izquierdo (usualmente el de rotación)
-					const rotationSource = session.inputSources.find((source, i) =>
-						source.handedness === "right" && source.gamepad && source.gamepad.axes.length >= 4
-					);
-
-					if (!rotationSource || !rotationSource.gamepad) return;
-
-					const axes = rotationSource.gamepad.axes;
-					const xAxis = axes[2]; // Joystick horizontal
-					const yAxis = axes[3]; // Joystick vertical (opcional, para mirar arriba/abajo)
-
-					const deadzone = 0.15;
-					const rotateX = Math.abs(xAxis) > deadzone ? xAxis : 0;
-					const rotateY = Math.abs(yAxis) > deadzone ? yAxis : 0;
-
-					// Sensibilidad de rotación
-					const sensitivity = 1.5;
-
-					// Aplicar rotación a la cámara
-					camera.rotation.y -= rotateX * deltaTime * sensitivity;
-					camera.rotation.x -= rotateY * deltaTime * sensitivity;
-
-					// Limitar pitch (evita mirar demasiado hacia arriba/abajo)
-					camera.rotation.x = THREE.MathUtils.clamp(camera.rotation.x, -Math.PI / 3, Math.PI / 3);
-				}
-
-				
-
 			
 				function setupVRControllers() {
 				    controllers = [
@@ -1176,25 +1141,6 @@
 			    
 			    // Solo ajustar FOV si no estamos en VR
 
-				if (renderer.xr.isPresenting && frameCount % 60 === 0) {
-					const session = renderer.xr.getSession();
-					session.inputSources.forEach((source, index) => {
-						if (source.gamepad) {
-							console.log(`Controlador ${index} (${source.handedness}) - Ejes:`, source.gamepad.axes);
-						}
-					});
-				}
-
-				if (renderer.xr.isPresenting && frameCount % 30 === 0) {
-					const session = renderer.xr.getSession();
-					const right = session.inputSources.find(s => s.handedness === "right" && s.gamepad);
-					if (right) {
-						console.log("Joystick derecho:", right.gamepad.axes);
-					}
-				}
-
-
-
 				if (!mapLoaded && renderer.xr.isPresenting) {
 				        console.log("Esperando a que cargue el mapa...");
 				        renderer.render(scene, camera);
@@ -1210,7 +1156,6 @@
 			    for (let i = 0; i < STEPS_PER_FRAME; i++) {
 			        controls(deltaTime);
 			        updatePlayer(deltaTime);
-					updateCameraRotationFromJoystick(deltaTime);
 			        teleportPlayerIfOob();
 			    }
 			    
