@@ -166,11 +166,7 @@
 			camera.position.set(0, -0.1, 0);
 			cameraContainer.add(camera);
 			
-			const renderer = new THREE.WebGLRenderer({ 
-			    antialias: true,
-			    alpha: true,
-			    powerPreference: "high-performance"
-			});
+			const renderer = new THREE.WebGLRenderer({ antialias: true });
 			renderer.setPixelRatio(window.devicePixelRatio);
 			renderer.setSize(window.innerWidth, window.innerHeight);
 			renderer.setAnimationLoop(animate);
@@ -178,8 +174,6 @@
 			renderer.shadowMap.type = THREE.VSMShadowMap;
 			renderer.toneMapping = THREE.ACESFilmicToneMapping;
 			renderer.xr.enabled = true; // Habilitar WebXR
-			renderer.outputEncoding = THREE.sRGBEncoding;
-			renderer.physicallyCorrectLights = true;
 			renderer.autoClear = false;
 			renderer.setClearColor(0x000000, 1);
 			renderer.toneMappingExposure = 1.5;
@@ -296,7 +290,6 @@
 			let sprintTimeRemaining = 0;
 			let sprintCooldownRemaining = 0;
 			let isJumpingVR = false;
-			let mapLoaded = false;
 			
 			// Head bob
 			let headBobActive = false;
@@ -719,45 +712,40 @@
 			}
 
 			loader.load('maybe.glb', (gltf) => {
-			    gltf.scene.position.y = 0;
-			    scene.add(gltf.scene);
-			    mapLoaded = true;
-			    console.log("Mapa marcado como cargado");
-			    
-			    // Asegurar que todas las texturas y materiales sean compatibles con VR
-			    gltf.scene.traverse(child => {
-			        if (child.isMesh) {
-			            child.castShadow = true;
-			            child.receiveShadow = true;
-			            
-			            // Forzar la actualización de matrices
-			            child.updateMatrix();
-			            child.updateMatrixWorld(true);
-			            
-			            // Asegurar que los materiales sean compatibles
-			            if (child.material) {
-			                child.material.needsUpdate = true;
-			                if (child.material.map) {
-			                    child.material.map.encoding = THREE.sRGBEncoding;
-			                }
-			            }
-			        }
-			    });
-			
-			    // Reconstruir el octree después de cargar
-			    worldOctree.fromGraphNode(gltf.scene);
-			    
-			    // Crear puntos después de asegurarse de que el mapa está cargado
-			    setTimeout(() => {
-			        createPoints();
-			        setupMonster();
-			    }, 500);
-			    
-			    // Debug: Verificar que el mapa se cargó
-			    console.log("Mapa cargado correctamente");
-			}, undefined, (error) => {
-			    console.error("Error al cargar el mapa:", error);
+				gltf.scene.position.y = 0;
+				scene.add(gltf.scene);
+		
+				worldOctree.fromGraphNode(gltf.scene);
+				createPoints()
+
+				gltf.scene.traverse(child => {
+					if (child.isMesh && child.material) {
+						child.castShadow = true;
+						child.receiveShadow = true;
+						if (child.material.color) {
+							child.material.color.multiplyScalar(0.87);
+						}
+						if (child.material.emissive) {
+							child.material.emissive.set(0x000000);
+						}
+						if (child.material.map) {
+							child.material.map.anisotropy = 4;
+						}
+					}
+    
+				
+					
+				});
+
+				// Octree Debug Helper
+				const helper = new OctreeHelper(worldOctree);
+				helper.visible = false;
+				scene.add(helper);
+
+				// Configurar el monstruo después de cargar el mapa
+				setupMonster();
 			});
+
 // HASTA AQUI BIENEEEEEE ------------------------------
 			function restartGame() {
 				gameOver = false;
@@ -930,6 +918,7 @@
 					controller.addEventListener('squeezeend', onSqueezeEnd);
 			});
 
+			movementController = controllers[0];
 
 			let frameCount = 0;
 				
@@ -1072,6 +1061,7 @@
 			document.body.appendChild(VRButton.createButton(renderer));
 			
 			// Inicializar controles VR
+			setupVRControllers();
 			
 			// Iniciar el bucle de animación
 			
@@ -1081,34 +1071,12 @@
 			
 			// Asegurarse de que el audio funcione en VR
 			renderer.xr.addEventListener('sessionstart', () => {
-			    audioListener.context.resume();
-			    gameMusic.play();
-				
-			    
-			    // Asegurarse de que la cámara esté correctamente posicionada
-			    camera.position.set(0, -0.1, 0);
-			    camera.rotation.set(0, 0, 0);
-			    
-			    // Reconstruir el octree si es necesario
-			    if (worldOctree) {
-			        scene.traverse(child => {
-			            if (child.isMesh) {
-			                worldOctree.fromGraphNode(child);
-			            }
-			        });
-			    }
-			    
-			    // Volver a crear los puntos si es necesario
-			    if (pointObjects.length === 0) {
-			        createPoints();
-			    }
-			    
-			    // Resetear la posición del jugador
-			    playerCollider.start.copy(initialPlayerPos);
-			    playerCollider.end.set(initialPlayerPos.x, initialPlayerPos.y + 0.65, initialPlayerPos.z);
-			    playerVelocity.set(0, 0, 0);
-
-				setupVRControllers();
+				audioListener.context.resume();
+				gameMusic.play();
+			});
+			
+			renderer.xr.addEventListener('sessionend', () => {
+				gameMusic.pause();
 			});
 
 			// Configurar el evento de resize
@@ -1140,13 +1108,6 @@
 			    const deltaTime = Math.min(0.05, clock.getDelta()) / STEPS_PER_FRAME;
 			    
 			    // Solo ajustar FOV si no estamos en VR
-
-				if (!mapLoaded && renderer.xr.isPresenting) {
-				        console.log("Esperando a que cargue el mapa...");
-				        renderer.render(scene, camera);
-				        stats.update();
-				        return;
-				    }
 			    if (!renderer.xr.isPresenting) {
 			        const targetFov = isSprinting ? 120 : 70;
 			        camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, deltaTime * 8);
@@ -1162,14 +1123,10 @@
 			    updateMonster(deltaTime);
 			    checkPointCollisions();
 			    
-			    // Actualizar la cámara VR
-			    if (renderer.xr.isPresenting) {
-			        camera.updateMatrixWorld();
-			    }
-			    
 			    renderer.render(scene, camera);
 			    stats.update();
 			}
+
 			renderer.setAnimationLoop(animate);
 			
 		</script>
