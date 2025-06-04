@@ -930,7 +930,6 @@
 					controller.addEventListener('squeezeend', onSqueezeEnd);
 			});
 
-			movementController = controllers[0];
 
 			let frameCount = 0;
 				
@@ -1073,7 +1072,6 @@
 			document.body.appendChild(VRButton.createButton(renderer));
 			
 			// Inicializar controles VR
-			setupVRControllers();
 			
 			// Iniciar el bucle de animación
 			
@@ -1085,6 +1083,7 @@
 			renderer.xr.addEventListener('sessionstart', () => {
 			    audioListener.context.resume();
 			    gameMusic.play();
+				
 			    
 			    // Asegurarse de que la cámara esté correctamente posicionada
 			    camera.position.set(0, -0.1, 0);
@@ -1108,6 +1107,8 @@
 			    playerCollider.start.copy(initialPlayerPos);
 			    playerCollider.end.set(initialPlayerPos.x, initialPlayerPos.y + 0.65, initialPlayerPos.z);
 			    playerVelocity.set(0, 0, 0);
+
+				setupVRControllers();
 			});
 
 			// Configurar el evento de resize
