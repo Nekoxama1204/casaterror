@@ -261,10 +261,10 @@
 			scene.add(directionalLight);
 		
 			// 6. Variables del jugador
-			const initialPlayerPos = new THREE.Vector3(-4.69, 1.35, -20.19);
+			const initialPlayerPos = new THREE.Vector3(-4.69, 0.15, -20.19);
 			const playerCollider = new Capsule(
 				initialPlayerPos.clone(),
-				new THREE.Vector3(initialPlayerPos.x, initialPlayerPos.y + 0.65, initialPlayerPos.z),
+				new THREE.Vector3(initialPlayerPos.x, initialPlayerPos.y + 0.10, initialPlayerPos.z),
 				0.35
 			);
 			const playerVelocity = new THREE.Vector3();
@@ -305,7 +305,7 @@
 				0.35
 			);
 			const monsterPath = [];
-			const monsterSpeed = 1500;
+			const monsterSpeed = 1000;
 			const monsterDetectionRadius = 350;
 			const monsterAttackDistance = 1.5;
 			const pathUpdateInterval = 0.5;
@@ -607,7 +607,7 @@
 							headBobActive = false;
 							headBobTime = 0;
 							camera.rotation.z = 0;
-							camera.position.set(0, -0.1, 0);
+							camera.position.set(0, -0.3, 0);
 						}
 					}
 				}
@@ -991,7 +991,7 @@
 				const yAxis = gamepad.axes[3] || 0;
 				
 				// Crear vector de movimiento basado en el joystick
-				const movement = new THREE.Vector3(xAxis, 0, -yAxis);
+				const movement = new THREE.Vector3(xAxis, 0, yAxis);
 				movement.normalize();
 				
 				// Aplicar la rotación de la cámara (cabeza del usuario)
