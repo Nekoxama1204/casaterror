@@ -847,13 +847,14 @@
 				monsterPath.push(playerPos);
 				currentPathIndex = 0;
 			}
-				
 
 			function controls(deltaTime) {
 				if (gameOver) return;
 				
+				// 1) Calcular velocidad base según si está en el suelo o en el aire
 				const speedDelta = deltaTime * (playerOnFloor ? 25 : 8);
-			
+				
+				// 2) Gestionar sprint (igual que antes)
 				if (isSprinting) {
 					sprintTimeRemaining -= deltaTime;
 					if (sprintTimeRemaining <= 0) {
@@ -863,38 +864,49 @@
 				} else if (sprintCooldownRemaining > 0) {
 					sprintCooldownRemaining -= deltaTime;
 				}
-			
+				
 				if (keyStates['ShiftLeft'] && playerOnFloor && !isSprinting && sprintCooldownRemaining <= 0) {
 					isSprinting = true;
 					sprintTimeRemaining = sprintDuration;
 				}
-			
+				
+				// 3) Velocidad real según sprint
 				const currentSpeed = isSprinting ? speedDelta * 1.8 : speedDelta;
-			
-				// Teclado
-				if (keyStates['KeyW']) {
-					playerVelocity.add(getForwardVector().multiplyScalar(currentSpeed));
+				
+				// 4) Movimiento con teclado (WASD), como antes
+				if (!renderer.xr.isPresenting) {
+					if (keyStates['KeyW']) {
+						playerVelocity.add(getForwardVector().multiplyScalar(currentSpeed));
+					}
+
+					if (keyStates['KeyS']) {
+						playerVelocity.add(getForwardVector().multiplyScalar(-currentSpeed));
+					}
+
+					if (keyStates['KeyA']) {
+						playerVelocity.add(getSideVector().multiplyScalar(-currentSpeed));
+					}
+
+					if (keyStates['KeyD']) {
+						playerVelocity.add(getSideVector().multiplyScalar(currentSpeed));
+					}
+
+					if (playerOnFloor && keyStates['Space']) {
+						playerVelocity.y = 8;
+					}
 				}
-				if (keyStates['KeyS']) {
-					playerVelocity.add(getForwardVector().multiplyScalar(-currentSpeed));
-				}
-				if (keyStates['KeyA']) {
-					playerVelocity.add(getSideVector().multiplyScalar(-currentSpeed));
-				}
-				if (keyStates['KeyD']) {
-					playerVelocity.add(getSideVector().multiplyScalar(currentSpeed));
-				}
-			
-				// VR: Movimiento con joystick
-				const controllerMovement = getMovementFromController();
-				if (controllerMovement.lengthSq() > 0) {
-					playerVelocity.add(controllerMovement.multiplyScalar(currentSpeed));
-				}
-			
-				if (playerOnFloor && (keyStates['Space'])) {
-					playerVelocity.y = 8;
+				
+				// 5) Si estamos en VR activo, añadir movimiento con joystick
+				if (renderer.xr.isPresenting) {
+					const movement = getMovementFromController(); // Vector normalizado según eje del joystick
+					// Al multiplicar por currentSpeed, la velocidad en VR será comparable a la del teclado
+					if (movement.lengthSq() > 0) {
+						playerVelocity.add(movement.multiplyScalar(currentSpeed));
+					}
 				}
 			}
+				
+
 
 
 			controllers.forEach(controller => {
@@ -906,7 +918,6 @@
 					controller.addEventListener('squeezeend', onSqueezeEnd);
 			});
 
-			movementController = controllers[0];
 
 			let frameCount = 0;
 				
@@ -1000,11 +1011,16 @@
 					renderer.xr.getControllerGrip(0),
 					renderer.xr.getControllerGrip(1)
 				];
+
+				movementController = controllers[0];
 				
 				// Añadir modelos a los controles
-				controllerGrips.forEach((grip, i) => {
-					grip.add(controllerModelFactory.createControllerModel(grip));
-					scene.add(grip);
+				controllers.forEach((ctrl) => {
+					scene.add(ctrl);
+					ctrl.addEventListener('selectstart', onSelectStart);
+					ctrl.addEventListener('selectend',   onSelectEnd);
+					ctrl.addEventListener('squeezestart', onSqueezeStart);
+					ctrl.addEventListener('squeezeend',   onSqueezeEnd);
 			});
 
 		}
